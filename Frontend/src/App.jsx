@@ -1,9 +1,8 @@
 import { useEffect } from "react";
-import Dashboard from "./pages/Dashboard";
 import Login from "./pages/auth/Login";
 import Signup from "./pages/auth/Signup";
-import AdminDashboard from "./pages/dashboard/AdminDashboard";
-import CustomerPortal from "./pages/dashboard/CustomerPortal";
+import StaffApp from "./components/StaffApp";
+import CustomerPortal from "./pages/Dashboard/CustomerPortal";
 import {
   clearStoredTokens,
   getAccessToken,
@@ -16,17 +15,6 @@ function RedirectTo({ to }) {
     window.location.assign(to);
   }, [to]);
   return null;
-}
-
-function RoleRoute({ path, role, children }) {
-  const currentPath = window.location.pathname;
-  if (currentPath !== path) {
-    return null;
-  }
-  if (getStoredRole() !== role) {
-    return <RedirectTo to={roleHomePath(getStoredRole())} />;
-  }
-  return children;
 }
 
 export default function App() {
@@ -50,20 +38,15 @@ export default function App() {
     return <RedirectTo to={home} />;
   }
 
-  return (
-    <>
-      <RoleRoute path="/admin/dashboard" role="admin">
-        <AdminDashboard />
-      </RoleRoute>
-      <RoleRoute path="/pharmacist/dashboard" role="pharmacist">
-        <Dashboard />
-      </RoleRoute>
-      <RoleRoute path="/customer/portal" role="customer">
-        <CustomerPortal />
-      </RoleRoute>
-      {path !== "/admin/dashboard" &&
-        path !== "/pharmacist/dashboard" &&
-        path !== "/customer/portal" && <RedirectTo to={home} />}
-    </>
-  );
+  // Staff (admin/pharmacist) share the same app shell with the copied modules.
+  if (path === "/admin/dashboard" || path === "/pharmacist/dashboard") {
+    return <StaffApp />;
+  }
+
+  if (path === "/customer/portal" && role === "customer") {
+    return <CustomerPortal />;
+  }
+
+  // Unknown path for an authenticated user: send them to their home.
+  return <RedirectTo to={home} />;
 }

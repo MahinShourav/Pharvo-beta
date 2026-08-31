@@ -9,6 +9,9 @@ import { loginUser, roleHomePath } from "../../services/auth";
 
 const MIN_PASSWORD_LENGTH = 6;
 
+const DEMO_USERNAME = "rafi";
+const DEMO_PASSWORD = "787878";
+
 function validateUsername(value) {
   if (!value.trim()) {
     return "Email or username is required.";
@@ -32,6 +35,36 @@ export default function Login() {
   const [errors, setErrors] = useState({ username: "", password: "" });
   const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  function fallbackCopy(text, onDone) {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      onDone();
+    } catch {
+      // ignore — the copy button just won't work in this browser
+    }
+    document.body.removeChild(textarea);
+  }
+
+  function handleCopyDemo() {
+    const text = `Username: ${DEMO_USERNAME}\nPassword: ${DEMO_PASSWORD}`;
+    const done = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
 
   function clearFieldError(field) {
     setErrors((prev) => ({ ...prev, [field]: "" }));
@@ -90,6 +123,23 @@ export default function Login() {
             </h2>
             <p className="login-card__subtitle">Sign in to your PHARVO account</p>
           </header>
+
+          <section className="demo-login" aria-label="Demo login credentials">
+            <div className="demo-login__title">
+              <span>Demo Login</span>
+              <button type="button" className="demo-login__copy" onClick={handleCopyDemo}>
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <div className="demo-login__row">
+              <span className="demo-login__row-label">Username</span>
+              <span className="demo-login__row-value">{DEMO_USERNAME}</span>
+            </div>
+            <div className="demo-login__row">
+              <span className="demo-login__row-label">Password</span>
+              <span className="demo-login__row-value">{DEMO_PASSWORD}</span>
+            </div>
+          </section>
 
           <form className="login-form" onSubmit={handleSubmit} noValidate>
             {formError && (

@@ -7,10 +7,20 @@ from .models import Sale, SaleItem
 
 class SaleItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source="product.name", read_only=True)
+    unit_display = serializers.CharField(source="get_unit_display", read_only=True)
 
     class Meta:
         model = SaleItem
-        fields = ["id", "product", "product_name", "quantity", "unit_price", "subtotal"]
+        fields = [
+            "id",
+            "product",
+            "product_name",
+            "unit",
+            "unit_display",
+            "quantity",
+            "unit_price",
+            "subtotal",
+        ]
         read_only_fields = ["subtotal"]
 
     def validate_quantity(self, value):
@@ -27,6 +37,14 @@ class SaleItemSerializer(serializers.ModelSerializer):
         validated_data["subtotal"] = (
             validated_data["quantity"] * validated_data["unit_price"]
         )
+        product = validated_data.get("product")
+        unit = validated_data.get("unit") or "pc"
+        per_unit = product.units_in(unit) if product else None
+        if per_unit is None:
+            raise serializers.ValidationError(
+                {"unit": f"Product has no {unit} pack size configured."}
+            )
+        validated_data["quantity_pcs"] = validated_data["quantity"] * per_unit
         return super().create(validated_data)
 
 

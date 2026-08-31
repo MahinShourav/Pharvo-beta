@@ -5,8 +5,15 @@ from rest_framework import serializers
 from .models import Customer
 
 
+def _inactive_after_days():
+    return 90
+
+
 class CustomerSerializer(serializers.ModelSerializer):
     is_member = serializers.SerializerMethodField()
+    total_purchases = serializers.IntegerField(read_only=True, default=0)
+    last_purchase = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
 
     class Meta:
         model = Customer
@@ -22,12 +29,27 @@ class CustomerSerializer(serializers.ModelSerializer):
             "member_since",
             "is_member",
             "loyalty_points",
+            "total_purchases",
+            "last_purchase",
+            "status",
             "created_at",
         ]
-        read_only_fields = ["created_at"]
+        read_only_fields = ["created_at", "total_purchases", "last_purchase", "status"]
 
     def get_is_member(self, obj):
         return obj.is_member
+
+    def get_last_purchase(self, obj):
+        last = getattr(obj, "last_purchase_date", None)
+        return last.isoformat() if last else None
+
+    def get_status(self, obj):
+        total = getattr(obj, "total_purchases", 0) or 0
+        last = getattr(obj, "last_purchase_date", None)
+        if total == 0 or last is None:
+            return "New"
+        days = (date.today() - last).days
+        return "Active" if days <= _inactive_after_days() else "Inactive"
 
     def validate_name(self, value):
         name = value.strip()

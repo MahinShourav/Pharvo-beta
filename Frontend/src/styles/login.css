@@ -344,6 +344,79 @@ a {
 }
 
 /* ------------------------------------------------------------
+   Demo login box
+   ------------------------------------------------------------ */
+
+.demo-login {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  margin: 0 0 20px;
+  border: 1px solid #a7f3d0;
+  border-radius: var(--radius-md);
+  background: #f0fdf4;
+}
+
+.demo-login__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #166534;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.demo-login__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #047857;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.demo-login__copy:hover {
+  background: #ecfdf5;
+}
+
+.demo-login__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.demo-login__row-label {
+  width: 82px;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: #065f46;
+}
+
+.demo-login__row-value {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #111827;
+  background: #ffffff;
+  border: 1px solid #d1fae5;
+  border-radius: 6px;
+  padding: 4px 10px;
+  user-select: all;
+}
+
+/* ------------------------------------------------------------
    Fields
    ------------------------------------------------------------ */
 

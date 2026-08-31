@@ -31,11 +31,41 @@ def _lock_products(items):
     return {product.id: product for product in products}
 
 
+def _pcs_quantity(item, product):
+    """PC-equivalent quantity of a sale line.
+
+    Prefers the value captured on the sale item at sale time so historical
+    sales stay reversible even if pack sizes change afterwards; falls back to
+    converting through the product's current pack configuration.
+    """
+    stored = getattr(item, "quantity_pcs", None)
+    if stored:
+        return stored
+    unit = getattr(item, "unit", None) or Product.Unit.PC
+    per_unit = product.units_in(unit)
+    if per_unit is None:
+        raise ValidationError(
+            {
+                "items": (
+                    f"'{product.name}' has no {unit} pack size configured, so it "
+                    f"cannot be sold by that unit."
+                )
+            }
+        )
+    return item.quantity * per_unit
+
+
 def _adjust(items, sign):
-    _lock_products(items)
+    locked = _lock_products(items)
     for item in items:
+        product = locked.get(item.product_id)
+        pcs = (
+            _pcs_quantity(item, product)
+            if product is not None
+            else item.quantity
+        )
         Product.objects.filter(id=item.product_id).update(
-            stock_quantity=F("stock_quantity") + sign * item.quantity
+            stock_quantity=F("stock_quantity") + sign * pcs
         )
 
 
@@ -55,16 +85,25 @@ def deduct_sale_stock(items):
     locked = _lock_products(items)
     for item in items:
         product = locked.get(item.product_id)
-        if product is not None and product.stock_quantity < item.quantity:
-            raise ValidationError(
-                {
-                    "items": (
-                        f"Insufficient stock for '{product.name}': "
-                        f"available {product.stock_quantity}, requested {item.quantity}."
-                    )
-                }
-            )
+        if product is not None:
+            pcs = _pcs_quantity(item, product)
+            if product.stock_quantity < pcs:
+                raise ValidationError(
+                    {
+                        "items": (
+                            f"Insufficient stock for '{product.name}': "
+                            f"requested {item.quantity} {getattr(item, 'unit', 'pc')} "
+                            f"({pcs} pcs), available {product.stock_quantity} pcs."
+                        )
+                    }
+                )
     for item in items:
+        product = locked.get(item.product_id)
+        pcs = (
+            _pcs_quantity(item, product)
+            if product is not None
+            else item.quantity
+        )
         Product.objects.filter(id=item.product_id).update(
-            stock_quantity=F("stock_quantity") - item.quantity
+            stock_quantity=F("stock_quantity") - pcs
         )

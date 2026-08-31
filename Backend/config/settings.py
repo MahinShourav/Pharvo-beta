@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "purchases",
     "sales",
     "pos",
+    "interaction",
     "crm",
     "dashboard",
     "reports",

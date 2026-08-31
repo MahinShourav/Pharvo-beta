@@ -83,6 +83,11 @@ class ProductSerializer(serializers.ModelSerializer):
             "supplier_name",
             "unit_price",
             "cost_price",
+            "pcs_per_strip",
+            "strips_per_box",
+            "pcs_per_box",
+            "strip_price",
+            "box_price",
             "stock_quantity",
             "reorder_level",
             "expiry_date",
@@ -126,10 +131,76 @@ class ProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Reorder level cannot be negative.")
         return value
 
+    def validate_pcs_per_strip(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError(
+                "PCs per strip must be greater than zero."
+            )
+        return value
+
+    def validate_strips_per_box(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError(
+                "Strips per box must be greater than zero."
+            )
+        return value
+
+    def validate_pcs_per_box(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError(
+                "PCs per box must be greater than zero."
+            )
+        return value
+
+    def validate_strip_price(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Strip price cannot be negative.")
+        return value
+
+    def validate_box_price(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("Box price cannot be negative.")
+        return value
+
     def validate_expiry_date(self, value):
         if value is not None and value < date.today():
             raise serializers.ValidationError("Expiry date cannot be in the past.")
         return value
+
+    def validate(self, attrs):
+        pcs_per_strip = attrs.get(
+            "pcs_per_strip", getattr(self.instance, "pcs_per_strip", None)
+        )
+        strips_per_box = attrs.get(
+            "strips_per_box", getattr(self.instance, "strips_per_box", None)
+        )
+        # Keep the pack chain internally consistent: when the strip size and
+        # strip count are both known, pcs_per_box is always their product.
+        if pcs_per_strip and strips_per_box:
+            attrs["pcs_per_box"] = pcs_per_strip * strips_per_box
+        pcs_per_box = attrs.get(
+            "pcs_per_box", getattr(self.instance, "pcs_per_box", None)
+        )
+        strip_price = attrs.get("strip_price", getattr(self.instance, "strip_price", None))
+        if strip_price is not None and not pcs_per_strip:
+            raise serializers.ValidationError(
+                {
+                    "strip_price": (
+                        "A pack size (PCs per strip) is required to sell by strip."
+                    )
+                }
+            )
+        box_price = attrs.get("box_price", getattr(self.instance, "box_price", None))
+        if box_price is not None and not pcs_per_box:
+            raise serializers.ValidationError(
+                {
+                    "box_price": (
+                        "A pack size (PCs per box) is required to sell by box. "
+                        "Set PCs per strip and strips per box."
+                    )
+                }
+            )
+        return attrs
 
 
 class DrugInteractionSerializer(serializers.ModelSerializer):

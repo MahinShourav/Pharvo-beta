@@ -6,6 +6,7 @@ from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from customers.models import Customer
+from interaction.services import detect_cart_interactions
 from inventory.models import Product
 from inventory.services import deduct_sale_stock, is_expired
 from sales.models import Sale, SaleItem, SalePayment
@@ -20,6 +21,10 @@ class PosItemSerializer(serializers.Serializer):
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.all(),
         error_messages={"does_not_exist": "Invalid product id."},
+    )
+    unit = serializers.ChoiceField(
+        choices=Product.Unit.choices,
+        default=Product.Unit.PC,
     )
     quantity = serializers.IntegerField()
     unit_price = serializers.DecimalField(
@@ -73,15 +78,43 @@ class PosCheckoutSerializer(serializers.Serializer):
     approve_sensitive = serializers.BooleanField(
         required=False, default=False, write_only=True
     )
+    approve_interactions = serializers.BooleanField(
+        required=False, default=False, write_only=True
+    )
+
+    @staticmethod
+    def resolve_unit_price(product, unit):
+        """Resolve the authoritative selling price for a cart line.
+
+        Prices always come from the database for every unit type so the
+        client can never invent prices at checkout.
+        """
+        if unit == Product.Unit.PC:
+            return product.unit_price
+        if not product.supports_unit(unit):
+            if product.units_in(unit) is None:
+                raise serializers.ValidationError(
+                    {
+                        "items": (
+                            f"'{product.name}' has no {unit} pack size configured "
+                            f"(units per {unit} missing)."
+                        )
+                    }
+                )
+            raise serializers.ValidationError(
+                {
+                    "items": (
+                        f"'{product.name}' has no {unit} price configured."
+                    )
+                }
+            )
+        return product.get_unit_price(unit)
 
     @staticmethod
     def _calc_total(items):
         total = Decimal("0")
         for item in items:
-            unit_price = item["unit_price"]
-            if unit_price is None:
-                unit_price = item["product"].unit_price
-            total += item["quantity"] * unit_price
+            total += item["quantity"] * item["unit_price"]
         return total
 
     def validate_items(self, items):
@@ -92,13 +125,19 @@ class PosCheckoutSerializer(serializers.Serializer):
         merged = {}
         for item in items:
             product_id = item["product"].id
-            if product_id in merged:
-                merged[product_id]["quantity"] += item["quantity"]
+            unit = item.get("unit") or Product.Unit.PC
+            key = (product_id, unit)
+            resolved_price = self.resolve_unit_price(item["product"], unit)
+            if key in merged:
+                merged[key]["quantity"] += item["quantity"]
             else:
-                merged[product_id] = {
+                merged[key] = {
                     "product": item["product"],
+                    "unit": unit,
                     "quantity": item["quantity"],
-                    "unit_price": item.get("unit_price"),
+                    # Store the DB-backed price so totals and receipts can
+                    # never drift from the configured selling price.
+                    "unit_price": resolved_price,
                 }
         return list(merged.values())
 
@@ -146,6 +185,12 @@ class PosCheckoutSerializer(serializers.Serializer):
         self._sensitive_items = [
             item for item in items if item["product"].is_sensitive
         ]
+        products = list(
+            Product.objects.filter(
+                id__in=[item["product"].id for item in items]
+            ).select_related("group", "category")
+        )
+        self._interactions = detect_cart_interactions(products)
         expired_items = [
             {
                 "product": item["product"].id,
@@ -169,6 +214,10 @@ class PosCheckoutSerializer(serializers.Serializer):
     def sensitive_items(self):
         return getattr(self, "_sensitive_items", [])
 
+    @property
+    def interactions(self):
+        return getattr(self, "_interactions", [])
+
     def create(self, validated_data):
         items = validated_data["items"]
         payments = validated_data["payments"]
@@ -190,11 +239,13 @@ class PosCheckoutSerializer(serializers.Serializer):
                     SaleItem(
                         sale=sale,
                         product=item["product"],
+                        unit=item.get("unit", "pc"),
                         quantity=item["quantity"],
-                        unit_price=(
-                            item["unit_price"]
-                            if item["unit_price"] is not None
-                            else item["product"].unit_price
+                        # Always resolved from the database in validate_items.
+                        unit_price=item["unit_price"],
+                        quantity_pcs=(
+                            item["quantity"]
+                            * item["product"].units_in(item.get("unit", "pc"))
                         ),
                     )
                     for item in items
@@ -228,10 +279,19 @@ class PosCheckoutSerializer(serializers.Serializer):
 
 class PosReceiptItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source="product.name", read_only=True)
+    unit_display = serializers.CharField(source="get_unit_display", read_only=True)
 
     class Meta:
         model = SaleItem
-        fields = ["product", "product_name", "quantity", "unit_price", "subtotal"]
+        fields = [
+            "product",
+            "product_name",
+            "unit",
+            "unit_display",
+            "quantity",
+            "unit_price",
+            "subtotal",
+        ]
 
 
 class PosReceiptPaymentSerializer(serializers.ModelSerializer):

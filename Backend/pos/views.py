@@ -20,6 +20,19 @@ class PosCheckoutView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         sensitive_items = serializer.sensitive_items
+        interactions = serializer.interactions
+        if interactions and not serializer.validated_data.get("approve_interactions"):
+            return Response(
+                {
+                    "requires_interaction_approval": True,
+                    "message": (
+                        "This cart contains medicines with known drug "
+                        "interactions. Review them before completing the sale."
+                    ),
+                    "interactions": interactions,
+                },
+                status=status.HTTP_200_OK,
+            )
         if sensitive_items and not serializer.validated_data.get("approve_sensitive"):
             return Response(
                 {

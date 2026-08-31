@@ -8,6 +8,11 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from accounts.permissions import IsStaffOrReadOnly
+from interaction.services import (
+    detect_cart_interactions,
+    interaction_match_terms,
+    product_interaction_identifiers,
+)
 from purchases.models import Purchase
 from purchases.serializers import PurchaseSerializer
 
@@ -144,24 +149,6 @@ class DrugInteractionViewSet(viewsets.ModelViewSet):
         return queryset
 
 
-def _interaction_match_terms(drug):
-    terms = {drug.strip().lower()}
-    for token in drug.split("/"):
-        token = token.strip().lower()
-        if token:
-            terms.add(token)
-    return {term for term in terms if term}
-
-
-def _product_interaction_identifiers(product):
-    identifiers = {product.name}
-    if product.group_id:
-        identifiers.add(product.group.name)
-    if product.category_id:
-        identifiers.add(product.category.name)
-    return {identifier.strip().lower() for identifier in identifiers if identifier and identifier.strip()}
-
-
 class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [IsStaffOrReadOnly]
@@ -253,7 +240,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         product = get_object_or_404(
             Product.objects.select_related("group", "category"), pk=pk
         )
-        identifiers = _product_interaction_identifiers(product)
+        identifiers = product_interaction_identifiers(product)
         if not identifiers:
             return Response([])
         matching_ids = set()
@@ -262,7 +249,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         )
         for interaction in candidates:
             for drug in (interaction.drug_a, interaction.drug_b):
-                terms = _interaction_match_terms(drug)
+                terms = interaction_match_terms(drug)
                 for identifier in identifiers:
                     for term in terms:
                         if term == identifier or (len(term) >= 4 and term in identifier):

@@ -4,6 +4,7 @@ from threading import Thread
 from django.test import TestCase, TransactionTestCase
 from rest_framework.test import APIClient
 
+from inventory.models import DrugInteraction
 from sales.models import Sale, SalePayment
 from tests.helpers import (
     auth_client,
@@ -157,6 +158,74 @@ class PosCheckoutTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 403)
+
+
+class PosInteractionTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff = make_staff("pos_ix_staff")
+        cls.warfarin = make_product(
+            name="Warfarin 5mg", barcode="BC-IXWAR", stock_quantity=20, unit_price=50
+        )
+        cls.aspirin = make_product(
+            name="Aspirin 75mg", barcode="BC-IXASP", stock_quantity=20, unit_price=10
+        )
+        cls.napa = make_product(
+            name="Napa 500mg", barcode="BC-IXNAP", stock_quantity=20, unit_price=20
+        )
+        DrugInteraction.objects.get_or_create(
+            drug_a="Warfarin", drug_b="Aspirin",
+            defaults={"interaction_level": "high_risk"},
+        )
+
+    def test_interaction_requires_approval_before_sale(self):
+        client = auth_client(self.staff)
+        payload = {
+            "items": [
+                {"product": self.warfarin.id, "quantity": 1},
+                {"product": self.aspirin.id, "quantity": 1},
+            ],
+            "payments": [{"method": "cash", "amount": "60.00"}],
+        }
+        pending = client.post("/api/pos/checkout/", payload, format="json")
+        self.assertEqual(pending.status_code, 200)
+        self.assertTrue(pending.data["requires_interaction_approval"])
+        self.assertEqual(pending.data["interactions"][0]["level"], "high_risk")
+        self.assertEqual(Sale.objects.count(), 0)
+        self.warfarin.refresh_from_db()
+        self.aspirin.refresh_from_db()
+        self.assertEqual(self.warfarin.stock_quantity, 20)
+        self.assertEqual(self.aspirin.stock_quantity, 20)
+
+    def test_interaction_approval_completes_sale(self):
+        client = auth_client(self.staff)
+        payload = {
+            "items": [
+                {"product": self.warfarin.id, "quantity": 1},
+                {"product": self.aspirin.id, "quantity": 1},
+            ],
+            "payments": [{"method": "cash", "amount": "60.00"}],
+            "approve_interactions": True,
+        }
+        response = client.post("/api/pos/checkout/", payload, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(float(response.data["payable_amount"]), 60.0)
+        self.warfarin.refresh_from_db()
+        self.aspirin.refresh_from_db()
+        self.assertEqual(self.warfarin.stock_quantity, 19)
+        self.assertEqual(self.aspirin.stock_quantity, 19)
+
+    def test_normal_medicines_checkout_without_warning(self):
+        client = auth_client(self.staff)
+        payload = {
+            "items": [
+                {"product": self.warfarin.id, "quantity": 1},
+                {"product": self.napa.id, "quantity": 1},
+            ],
+            "payments": [{"method": "cash", "amount": "70.00"}],
+        }
+        response = client.post("/api/pos/checkout/", payload, format="json")
+        self.assertEqual(response.status_code, 201)
 
 
 class ConcurrentCheckoutTest(TransactionTestCase):
