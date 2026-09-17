@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from purchases.models import Purchase, PurchaseItem
@@ -12,6 +13,8 @@ from tests.helpers import (
     make_supplier,
     make_user,
 )
+
+UserModel = get_user_model()
 
 PRODUCT_PAYLOAD = {
     "name": "Paracetamol",
@@ -200,6 +203,32 @@ class SupplierTests(TestCase):
                 "/api/inventory/suppliers/", {"name": "Denied"}, format="json"
             )
             .status_code,
+            403,
+        )
+
+    def test_pharmacist_supplier_master_is_read_only(self):
+        pharmacist = UserModel.objects.create_user(
+            username="sup_pharmacist",
+            password="testpass123",
+            role=UserModel.Role.PHARMACIST,
+            is_staff=False,
+        )
+        client = auth_client(pharmacist)
+        self.assertEqual(client.get("/api/inventory/suppliers/").status_code, 200)
+        self.assertEqual(
+            client.post(
+                "/api/inventory/suppliers/", {"name": "Blocked"}, format="json"
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            client.patch(
+                f"/api/inventory/suppliers/{self.supplier.id}/", {"name": "Hacked"}
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            client.delete(f"/api/inventory/suppliers/{self.supplier.id}/").status_code,
             403,
         )
 

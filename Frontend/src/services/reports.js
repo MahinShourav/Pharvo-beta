@@ -51,3 +51,11 @@ export async function fetchStockReport() {
 export async function fetchPurchasesReport(params = {}) {
   return request(`/reports/purchases/${query(params)}`);
 }
+
+/**
+ * Fetch the customers report (top customers by spending / purchase count).
+ * @returns {Promise<object>}
+ */
+export async function fetchCustomersReport() {
+  return request("/reports/customers/");
+}

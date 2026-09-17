@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from crm.models import Reminder
@@ -11,6 +12,8 @@ from tests.helpers import (
     make_staff,
     make_user,
 )
+
+UserModel = get_user_model()
 
 
 class CRMTests(TestCase):
@@ -90,3 +93,73 @@ class CRMTests(TestCase):
         self.assertEqual(
             len(client.get("/api/crm/reminders/?active=false").data), 1
         )
+
+    def test_pharmacist_can_create_and_update_reminders(self):
+        pharmacist = UserModel.objects.create_user(
+            username="crm_pharmacist",
+            password="testpass123",
+            role=UserModel.Role.PHARMACIST,
+            is_staff=False,
+        )
+        client = auth_client(pharmacist)
+        created = client.post(
+            "/api/crm/reminders/",
+            {
+                "customer": self.customer.id,
+                "product": self.product.id,
+                "title": "Refill reminder",
+                "reminder_time": (
+                    date.today() + timedelta(days=2)
+                ).strftime("%Y-%m-%dT09:00:00Z"),
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201)
+        reminder_id = created.data["id"]
+        updated = client.patch(
+            f"/api/crm/reminders/{reminder_id}/",
+            {"title": "Refill reminder updated"},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(
+            Reminder.objects.get(pk=reminder_id).title,
+            "Refill reminder updated",
+        )
+
+    def test_pharmacist_can_read_crm_profiles(self):
+        pharmacist = UserModel.objects.create_user(
+            username="crm_pharmacist_read",
+            password="testpass123",
+            role=UserModel.Role.PHARMACIST,
+            is_staff=False,
+        )
+        client = auth_client(pharmacist)
+        self.assertEqual(
+            client.get(f"/api/crm/customers/{self.customer.id}/summary/").status_code,
+            200,
+        )
+        self.assertEqual(
+            client.get(f"/api/crm/customers/{self.customer.id}/purchases/").status_code,
+            200,
+        )
+        self.assertEqual(client.get("/api/crm/reminders/").status_code, 200)
+
+    def test_customer_cannot_write_reminders(self):
+        customer_role = UserModel.objects.create_user(
+            username="crm_customer_role",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            is_staff=False,
+        )
+        response = auth_client(customer_role).post(
+            "/api/crm/reminders/",
+            {
+                "customer": self.customer.id,
+                "product": self.product.id,
+                "title": "Blocked",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(Reminder.objects.count(), 0)

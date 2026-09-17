@@ -1,8 +1,10 @@
 ﻿import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Search, ClipboardList, Receipt } from "lucide-react";
 import { fetchSales } from "../../services/pos";
+import { ROLES } from "../../services/auth";
 import { ApiError } from "../../services/api";
 import { Card, CardHeader, StatCard, StatusBadge, LoadingState, EmptyState } from "../../components/ui/Blocks";
+import SupplierOrdersView from "./SupplierOrdersView";
 
 const METHOD_FILTERS = [
   { key: "all", label: "All Methods" },
@@ -16,7 +18,14 @@ function methodDisplay(method) {
   return map[method] || method || "Cash";
 }
 
-export default function OrdersPage() {
+export default function OrdersPage({ role = ROLES.PHARMACIST } = {}) {
+  if (role === ROLES.PHARMACIST) {
+    return <SupplierOrdersView />;
+  }
+  return <SalesOrdersView />;
+}
+
+function SalesOrdersView() {
   const [search, setSearch] = useState("");
   const [method, setMethod] = useState("all");
   const [orders, setOrders] = useState([]);

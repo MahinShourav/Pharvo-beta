@@ -10,6 +10,7 @@ class Sale(models.Model):
         CARD = "card", "Card"
         BKASH = "bkash", "bKash"
         NAGAD = "nagad", "Nagad"
+        DUE = "due", "Due"
 
     invoice_number = models.CharField(max_length=50, unique=True)
     customer = models.ForeignKey(

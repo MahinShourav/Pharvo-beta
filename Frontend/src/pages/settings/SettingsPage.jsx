@@ -10,7 +10,16 @@ const ROLE_LABELS = {
   [ROLES.CUSTOMER]: "Customer",
 };
 
-export default function SettingsPage({ user, onLogout }) {
+const SECTION_PERMISSIONS = {
+  account: [ROLES.ADMIN, ROLES.PHARMACIST],
+};
+
+function canViewSection(section, role) {
+  const allowed = SECTION_PERMISSIONS[section];
+  return Boolean(allowed) && allowed.includes(role);
+}
+
+export default function SettingsPage({ user, onLogout, role }) {
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -29,6 +38,7 @@ export default function SettingsPage({ user, onLogout }) {
   }, []);
 
   const profile = me || user || {};
+  const resolvedRole = role || user?.role || ROLES.PHARMACIST;
 
   if (loading) return <LoadingState label="Loading your account..." />;
 
@@ -47,62 +57,64 @@ export default function SettingsPage({ user, onLogout }) {
         </div>
       )}
 
-      <Card>
-        <CardHeader
-          title="Account Information"
-          subtitle="Your PHARVO profile"
-          action={
-            <button
-              type="button"
-              onClick={onLogout}
-              className="px-4 py-2 rounded-lg text-[13px] font-medium text-red-600 bg-red-50 border border-red-100 hover:bg-red-100 cursor-pointer flex items-center gap-1.5"
-            >
-              <LogOut size={16} />
-              Sign out
-            </button>
-          }
-        />
-        <div className="p-6">
-          <div className="flex items-center gap-5 mb-6">
-            <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white text-xl font-bold flex items-center justify-center shrink-0">
-              {(profile.full_name || profile.username || "U")
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase()}
+      {canViewSection("account", resolvedRole) && (
+        <Card>
+          <CardHeader
+            title="Account Information"
+            subtitle="Your PHARVO profile"
+            action={
+              <button
+                type="button"
+                onClick={onLogout}
+                className="px-4 py-2 rounded-lg text-[13px] font-medium text-red-600 bg-red-50 border border-red-100 hover:bg-red-100 cursor-pointer flex items-center gap-1.5"
+              >
+                <LogOut size={16} />
+                Sign out
+              </button>
+            }
+          />
+          <div className="p-6">
+            <div className="flex items-center gap-5 mb-6">
+              <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white text-xl font-bold flex items-center justify-center shrink-0">
+                {(profile.full_name || profile.username || "U")
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </div>
+              <div>
+                <div className="text-lg font-bold text-slate-900">{profile.full_name || profile.username || "User"}</div>
+                <div className="text-sm text-slate-500 font-normal mt-0.5">{ROLE_LABELS[profile.role] || profile.role}</div>
+              </div>
             </div>
-            <div>
-              <div className="text-lg font-bold text-slate-900">{profile.full_name || profile.username || "User"}</div>
-              <div className="text-sm text-slate-500 font-normal mt-0.5">{ROLE_LABELS[profile.role] || profile.role}</div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {rows.map((row) => {
+                const Icon = row.icon;
+                return (
+                  <div key={row.label} className="p-4 bg-slate-50/70 border border-slate-100 rounded-lg flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-blue-600 shrink-0">
+                      <Icon size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{row.label}</div>
+                      <div className="text-[15px] font-medium text-slate-800 truncate">{row.value}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 p-4 rounded-lg border border-emerald-100 bg-emerald-50/60 flex items-center gap-3">
+              <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+              <p className="text-[13px] text-slate-600 font-normal m-0">
+                You're signed in with a valid session. Your data is synced to the PHARVO backend.
+              </p>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {rows.map((row) => {
-              const Icon = row.icon;
-              return (
-                <div key={row.label} className="p-4 bg-slate-50/70 border border-slate-100 rounded-lg flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-blue-600 shrink-0">
-                    <Icon size={18} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{row.label}</div>
-                    <div className="text-[15px] font-medium text-slate-800 truncate">{row.value}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-5 p-4 rounded-lg border border-emerald-100 bg-emerald-50/60 flex items-center gap-3">
-            <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-            <p className="text-[13px] text-slate-600 font-normal m-0">
-              You're signed in with a valid session. Your data is synced to the PHARVO backend.
-            </p>
-          </div>
-        </div>
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }

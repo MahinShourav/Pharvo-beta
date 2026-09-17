@@ -5,7 +5,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from accounts.permissions import IsStaffOrReadOnly
+from accounts.permissions import IsPharmacyStaff, IsStaffOrReadOnly
 from customers.models import Customer
 from customers.serializers import CustomerSerializer
 from sales.models import SaleItem
@@ -79,7 +79,7 @@ class CrmCustomerViewSet(viewsets.ReadOnlyModelViewSet):
 
 class ReminderViewSet(viewsets.ModelViewSet):
     serializer_class = ReminderSerializer
-    permission_classes = [IsStaffOrReadOnly]
+    permission_classes = [IsPharmacyStaff]
 
     def get_queryset(self):
         queryset = Reminder.objects.select_related("customer", "product")

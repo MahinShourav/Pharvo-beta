@@ -145,10 +145,15 @@ class PosCheckoutTests(TestCase):
         product.refresh_from_db()
         self.assertEqual(product.stock_quantity, 1)
 
-    def test_requires_staff(self):
-        from tests.helpers import make_user
+    def test_customer_role_denied(self):
+        from django.contrib.auth import get_user_model
 
-        clerk = make_user("pos_clerk")
+        UserModel = get_user_model()
+        clerk = UserModel.objects.create_user(
+            username="pos_customer_user",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+        )
         product = make_product(barcode="BC-POS7", stock_quantity=5, unit_price=100)
         response = auth_client(clerk).post(
             "/api/pos/checkout/",
@@ -158,6 +163,65 @@ class PosCheckoutTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_pharmacist_role_can_checkout(self):
+        from django.contrib.auth import get_user_model
+
+        UserModel = get_user_model()
+        pharmacist = UserModel.objects.create_user(
+            username="pos_pharmacist",
+            password="testpass123",
+            role=UserModel.Role.PHARMACIST,
+            is_staff=False,
+        )
+        product = make_product(barcode="BC-POS8", stock_quantity=5, unit_price=100)
+        response = auth_client(pharmacist).post(
+            "/api/pos/checkout/",
+            _checkout_payload(
+                product.id, 2, [{"method": "cash", "amount": "200.00"}]
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        product.refresh_from_db()
+        self.assertEqual(product.stock_quantity, 3)
+
+    def test_pharmacist_role_sensitive_approval_flow(self):
+        from django.contrib.auth import get_user_model
+
+        UserModel = get_user_model()
+        pharmacist = UserModel.objects.create_user(
+            username="pos_pharm_sens",
+            password="testpass123",
+            role=UserModel.Role.PHARMACIST,
+            is_staff=False,
+        )
+        product = make_product(
+            barcode="BC-POS9", stock_quantity=5, unit_price=100, is_sensitive=True
+        )
+        client = auth_client(pharmacist)
+        pending = client.post(
+            "/api/pos/checkout/",
+            _checkout_payload(
+                product.id, 1, [{"method": "cash", "amount": "100.00"}]
+            ),
+            format="json",
+        )
+        self.assertEqual(pending.status_code, 200)
+        self.assertTrue(pending.data["requires_approval"])
+        approved = client.post(
+            "/api/pos/checkout/",
+            _checkout_payload(
+                product.id,
+                1,
+                [{"method": "cash", "amount": "100.00"}],
+                approve_sensitive=True,
+            ),
+            format="json",
+        )
+        self.assertEqual(approved.status_code, 201)
+        product.refresh_from_db()
+        self.assertEqual(product.stock_quantity, 4)
 
 
 class PosInteractionTests(TestCase):

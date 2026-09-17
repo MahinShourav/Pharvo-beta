@@ -99,6 +99,34 @@ function isJsonResponse(response) {
   return (response.headers.get("content-type") ?? "").includes("application/json");
 }
 
+/**
+ * Abort a request that does not settle within REQUEST_TIMEOUT_MS.
+ *
+ * Without this a hung fetch (e.g. the Vite proxy or backend that accepts a
+ * connection but never responds) would leave caller promises pending forever,
+ * which keeps loading states (like the Dashboard) spinning indefinitely.
+ */
+const REQUEST_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return response;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err && err.name === "AbortError") {
+      throw new ApiError(
+        "The request timed out. Please check that the PHARVO service is running and try again.",
+        0
+      );
+    }
+    throw err;
+  }
+}
+
 async function parseError(response) {
   let message = "Request failed.";
   try {
@@ -145,12 +173,15 @@ export async function request(path, { method = "GET", body, auth = true } = {}) 
 
   let response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetchWithTimeout(`${API_BASE}${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
+    if (err instanceof ApiError) {
+      throw err;
+    }
     throw new ApiError(
       "Unable to connect to the PHARVO service. Please try again.",
       0

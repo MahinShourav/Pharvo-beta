@@ -4,6 +4,7 @@ import Signup from "./pages/auth/Signup";
 import StaffApp from "./components/StaffApp";
 import CustomerPortal from "./pages/Dashboard/CustomerPortal";
 import {
+  ROLES,
   clearStoredTokens,
   getAccessToken,
   getStoredRole,
@@ -38,12 +39,18 @@ export default function App() {
     return <RedirectTo to={home} />;
   }
 
-  // Staff (admin/pharmacist) share the same app shell with the copied modules.
-  if (path === "/admin/dashboard" || path === "/pharmacist/dashboard") {
+  // Staff portals are bound to their own role. The admin portal URL only
+  // renders for admins and the pharmacist portal only for pharmacists, so a
+  // role can never reach another role's portal by typing its URL directly.
+  if (role === ROLES.ADMIN && path === "/admin/dashboard") {
     return <StaffApp />;
   }
 
-  if (path === "/customer/portal" && role === "customer") {
+  if (role === ROLES.PHARMACIST && path === "/pharmacist/dashboard") {
+    return <StaffApp />;
+  }
+
+  if (role === ROLES.CUSTOMER && path === "/customer/portal") {
     return <CustomerPortal />;
   }
 

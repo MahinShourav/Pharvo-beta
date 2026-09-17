@@ -1,18 +1,14 @@
-from rest_framework import permissions, status
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from accounts.permissions import IsPharmacyStaff
 
 from .serializers import PosCheckoutSerializer, PosReceiptSerializer
 
 
-class IsStaff(permissions.BasePermission):
-    def has_permission(self, request, view):
-        user = request.user
-        return bool(user and user.is_authenticated and user.is_staff)
-
-
 class PosCheckoutView(APIView):
-    permission_classes = [IsStaff]
+    permission_classes = [IsPharmacyStaff]
 
     def post(self, request):
         serializer = PosCheckoutSerializer(

@@ -5,17 +5,19 @@ import {
   ChevronRight, ChevronLeft, Pill, Calendar, Eye, ArrowLeft, Search, Plus,
   Edit2, Send, X, Check, CheckCircle, Phone, Mail, MapPin, Hash, Shield, User,
   Activity, Info, Package, Repeat, Download, Clock, CreditCard,
-  Smartphone, Banknote, ArrowUp, ArrowDown, RefreshCw, Zap, Link as LinkIcon
+  Smartphone, Banknote, ArrowUp, ArrowDown, RefreshCw, Zap, Link as LinkIcon,
+  ShieldAlert
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area
 } from 'recharts';
 import { fetchCrmCustomers, fetchCustomerSummary, fetchCustomerPurchases, fetchReminders, createReminder, updateReminder } from '../../services/crm';
-import { fetchSales } from '../../services/pos';
-import { fetchProducts } from '../../services/medicine';
+import { fetchSales, checkInteractions } from '../../services/pos';
+import { fetchProducts, fetchProduct, fetchRelatedProducts } from '../../services/medicine';
 import { createCustomer } from '../../services/customer';
 import { ApiError } from '../../services/api';
+import { ROLES } from '../../services/auth';
 
 // ─── Shared Mock Customers ───────────────────────────────────────────────────
 
@@ -231,6 +233,12 @@ const initials = (name) => name ? name.split(' ').map(n => n[0]).join('').slice(
 const CRM_TIER_MAP = { gold: 'Premium', silver: 'Regular', bronze: 'Basic' };
 const CRM_TIER_TO_BACKEND = { Basic: 'bronze', Regular: 'silver', Premium: 'gold' };
 
+// CRM membership discount rules, kept identical to the pharmacist POS values
+// (bronze 2% / silver 4% / gold 6%). A cart line qualifies only when its line
+// total is STRICTLY greater than CRM_MIN_ELIGIBLE_LINE (100 BDT).
+const CRM_DISCOUNT_RATES = { Basic: 2, Regular: 4, Premium: 6 };
+const CRM_MIN_ELIGIBLE_LINE = 100;
+
 const crmTier = (tier) => CRM_TIER_MAP[tier] || 'Basic';
 
 const calcAge = (dob) => {
@@ -243,7 +251,7 @@ const calcAge = (dob) => {
   return age;
 };
 
-const mapCrmCustomer = (c, summary) => ({
+export const mapCrmCustomer = (c, summary) => ({
   id: `PHC-${String(c.id).padStart(3, '0')}`,
   name: c.name,
   phone: c.phone,
@@ -268,9 +276,16 @@ const mapCrmCustomer = (c, summary) => ({
   nid: '—',
   referredBy: '—',
   createdAt: c.created_at,
+  isMember: Boolean(c.is_member),
   frequentlyBought: summary && summary.frequently_purchased_products && summary.frequently_purchased_products.length
     ? summary.frequently_purchased_products[0].product_name
     : null,
+  frequentlyBoughtList: (summary?.frequently_purchased_products || []).map((fp) => ({
+    product: fp.product,
+    name: fp.product_name,
+    quantity: fp.total_quantity,
+    spent: Number(fp.total_spent || 0),
+  })),
 });
 
 const mapPurchase = (s) => ({
@@ -285,12 +300,13 @@ const mapPurchase = (s) => ({
   products: Array.isArray(s.items) ? s.items.map((i) => `${i.product_name || 'Item'} ×${i.quantity}`) : [],
 });
 
-const mapCrmReminder = (r) => ({
+export const mapCrmReminder = (r) => ({
   id: `RMD-${r.id}`,
   customerId: r.customer ? `PHC-${String(r.customer).padStart(3, '0')}` : null,
   customer: r.customer_name || '—',
   tier: 'Regular',
   medicine: r.product_name || r.title || '—',
+  productId: r.product || null,
   dose: '—',
   frequency: r.reminder_time ? `Reminder ${r.reminder_time}` : '—',
   startDate: r.created_at ? r.created_at.slice(0, 10) : '—',
@@ -394,6 +410,25 @@ const PaymentMethodBadge = ({ method }) => {
       <span>{method}</span>
     </span>
   );
+};
+
+const INTERACTION_LEVELS = {
+  caution: {
+    label: 'Caution',
+    badge: 'bg-amber-100 text-amber-800 border-amber-200',
+  },
+  avoid: {
+    label: 'Avoid',
+    badge: 'bg-orange-100 text-orange-800 border-orange-200',
+  },
+  high_risk: {
+    label: 'High Risk',
+    badge: 'bg-red-100 text-red-700 border-red-200',
+  },
+  contraindicated: {
+    label: 'Contraindicated',
+    badge: 'bg-rose-100 text-rose-700 border-rose-300',
+  },
 };
 
 const WhatsAppIcon = () => (
@@ -732,8 +767,9 @@ function CRMDashboardView({ onNavigateTab, onNavigate, onViewProfile, customers 
 
 // ─── 2. Customer Tiers View (Matching Screenshot 1 & 2) ────────────────────────
 
-function CustomerTiersView({ customers, onSelectCustomer }) {
+function CustomerTiersView({ customers, onSelectCustomer, showTierPlans = true }) {
   const [selectedTier, setSelectedTier] = useState('All');
+  const [search, setSearch] = useState('');
 
   const tiers = [
     {
@@ -779,13 +815,21 @@ function CustomerTiersView({ customers, onSelectCustomer }) {
     color: t.color,
   }));
 
-  const visibleCustomers = selectedTier === 'All'
+  const visibleCustomers = (selectedTier === 'All'
     ? customers.filter(c => ['Basic', 'Regular', 'Premium'].includes(c.tier))
-    : customers.filter(c => c.tier === selectedTier);
+    : customers.filter(c => c.tier === selectedTier)
+  ).filter((c) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (c.name || '').toLowerCase().includes(q)
+      || (c.phone || '').toLowerCase().includes(q)
+      || (c.area || '').toLowerCase().includes(q);
+  });
 
   return (
     <div className="flex flex-col gap-4 pb-4">
       {/* 3 Tier Summary Cards */}
+      {showTierPlans && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {tiers.map((t) => {
           const purchases = t.customers.reduce((s, c) => s + c.purchases, 0);
@@ -852,10 +896,12 @@ function CustomerTiersView({ customers, onSelectCustomer }) {
           );
         })}
       </div>
+      )}
 
       {/* Chart + Table Row */}
       <div className="grid grid-cols-12 gap-4 items-start">
         {/* Left: Distribution Chart */}
+        {showTierPlans && (
         <div className="col-span-12 lg:col-span-4 bg-white border border-slate-200 rounded-xl shadow-2xs p-5 flex flex-col gap-4 self-start">
           <div>
             <div className="text-sm font-semibold text-slate-900 mb-0.5">Tier Distribution</div>
@@ -889,9 +935,10 @@ function CustomerTiersView({ customers, onSelectCustomer }) {
             ))}
           </div>
         </div>
+        )}
 
         {/* Right: Customers Table */}
-        <div className="col-span-12 lg:col-span-8 bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden flex flex-col">
+        <div className={`${showTierPlans ? 'col-span-12 lg:col-span-8' : 'col-span-12'} bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden flex flex-col`}>
           <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-slate-900">Customers</span>
@@ -899,18 +946,31 @@ function CustomerTiersView({ customers, onSelectCustomer }) {
                 {selectedTier === 'All' ? 'All tiers' : selectedTier} · {visibleCustomers.length} records
               </span>
             </div>
-            <div className="flex items-center gap-1 bg-slate-100/70 border border-slate-200/80 rounded-lg p-0.5">
-              {['All', 'Basic', 'Regular', 'Premium'].map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setSelectedTier(t)}
-                  className={`px-3 h-7 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                    selectedTier === t ? 'bg-white text-slate-900 shadow-2xs font-semibold' : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              {!showTierPlans && (
+                <div className="relative">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search by name, phone or area..."
+                    className="w-48 pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white outline-none focus:border-slate-400 shadow-2xs"
+                  />
+                </div>
+              )}
+              <div className="flex items-center gap-1 bg-slate-100/70 border border-slate-200/80 rounded-lg p-0.5">
+                {['All', 'Basic', 'Regular', 'Premium'].map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setSelectedTier(t)}
+                    className={`px-3 h-7 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                      selectedTier === t ? 'bg-white text-slate-900 shadow-2xs font-semibold' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -952,7 +1012,7 @@ function CustomerTiersView({ customers, onSelectCustomer }) {
                 {visibleCustomers.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-4 py-10 text-center text-xs text-slate-400">
-                      No customers found in this tier.
+                      {search.trim() ? 'No customers match your search.' : 'No customers found in this tier.'}
                     </td>
                   </tr>
                 )}
@@ -1883,7 +1943,8 @@ function NotificationsView() {
 
 // ─── 8. Customer Profile View (With 5 Sub-Tabs) ───────────────────────────────
 
-function CustomerProfileView({ customerId, customers, reminders: allReminders = [], onBack }) {
+export function CustomerProfileView({ customerId, customers, reminders: allReminders = [], role = ROLES.PHARMACIST, onBack }) {
+  const isPharmacist = role === ROLES.PHARMACIST;
   const [activeProfileTab, setActiveProfileTab] = useState('overview');
   const [expandedPurchaseId, setExpandedPurchaseId] = useState(null);
   const [customerReminders, setCustomerReminders] = useState([]);
@@ -1891,6 +1952,11 @@ function CustomerProfileView({ customerId, customers, reminders: allReminders = 
   const [loadingPurchases, setLoadingPurchases] = useState(true);
   const [isAddReminderOpen, setIsAddReminderOpen] = useState(false);
   const [editingReminder, setEditingReminder] = useState(null);
+  const [medicinesLoading, setMedicinesLoading] = useState(true);
+  const [medicinesDetail, setMedicinesDetail] = useState({});
+  const [pendingInteractions, setPendingInteractions] = useState(null);
+  const [checkingInteractions, setCheckingInteractions] = useState(false);
+  const [interactionError, setInteractionError] = useState('');
 
   const [reminderForm, setReminderForm] = useState({
     medicine: '', dose: '', frequency: '', startDate: 'Jan 12, 2026', endDate: 'Ongoing'
@@ -1915,6 +1981,70 @@ function CustomerProfileView({ customerId, customers, reminders: allReminders = 
       .catch(() => setPurchases([]))
       .finally(() => setLoadingPurchases(false));
   }, [rawCustomerId]);
+
+  const recommendedProducts = useMemo(
+    () => (customer?.frequentlyBoughtList || []).slice(0, 3),
+    [customer]
+  );
+
+  useEffect(() => {
+    if (!recommendedProducts.length) {
+      setMedicinesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setMedicinesLoading(true);
+    Promise.all(
+      recommendedProducts.map(async (item) => {
+        if (!item.product) return [item.product, null];
+        try {
+          const [product, related] = await Promise.all([
+            fetchProduct(item.product).catch(() => null),
+            fetchRelatedProducts(item.product).catch(() => []),
+          ]);
+          return [item.product, { product, related: related || [] }];
+        } catch {
+          return [item.product, null];
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      const map = {};
+      entries.forEach(([id, val]) => {
+        if (id && val) map[id] = val;
+      });
+      setMedicinesDetail(map);
+      setMedicinesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [recommendedProducts]);
+
+  const interactionMedicines = useMemo(() => {
+    const ids = new Set();
+    (customer?.frequentlyBoughtList || []).forEach((i) => {
+      if (i.product) ids.add(Number(i.product));
+    });
+    customerReminders.forEach((r) => {
+      if (r.productId) ids.add(Number(r.productId));
+    });
+    return Array.from(ids);
+  }, [customer, customerReminders]);
+
+  const handleCheckInteractions = async () => {
+    if (interactionMedicines.length < 2) return;
+    setCheckingInteractions(true);
+    setInteractionError('');
+    try {
+      const data = await checkInteractions(
+        interactionMedicines.map((id) => ({ product: id }))
+      );
+      setPendingInteractions(data?.interactions || []);
+    } catch (err) {
+      setInteractionError(err instanceof ApiError ? err.message : 'Unable to run the interaction check.');
+    } finally {
+      setCheckingInteractions(false);
+    }
+  };
 
   const monthlySpendData = useMemo(() => {
     const buckets = {};
@@ -2250,6 +2380,39 @@ function CustomerProfileView({ customerId, customers, reminders: allReminders = 
               </div>
             </div>
 
+            {isPharmacist && (
+              <div className="bg-white border border-slate-200 rounded-xl shadow-2xs p-5 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-800">CRM Discount Eligibility</span>
+                  <TierPill tier={customer.tier} />
+                </div>
+                {customer.isMember ? (
+                  <div className="flex items-start gap-2.5 p-3 bg-emerald-50/80 border border-emerald-200 rounded-lg">
+                    <CheckCircle size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-semibold text-emerald-700">
+                        Eligible · {CRM_DISCOUNT_RATES[customer.tier] || 0}% member discount
+                      </div>
+                      <div className="text-[12px] text-emerald-600 mt-0.5 leading-snug">
+                        Automatically applied at POS on qualifying lines above ৳{CRM_MIN_ELIGIBLE_LINE}.
+                        Lines of ৳{CRM_MIN_ELIGIBLE_LINE} or below do not qualify.
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <Info size={15} className="text-slate-500 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-semibold text-slate-700">Not eligible</div>
+                      <div className="text-[12px] text-slate-500 mt-0.5 leading-snug">
+                        This customer is not a CRM member, so no membership discount applies.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs flex flex-col justify-between">
                 <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
@@ -2273,6 +2436,79 @@ function CustomerProfileView({ customerId, customers, reminders: allReminders = 
                 <div className="text-[12px] text-slate-400 mt-0.5">Frequent Visit</div>
               </div>
             </div>
+
+            {isPharmacist && (
+              <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-semibold text-slate-800">Recommended Medicines</span>
+                    <div className="text-xs text-slate-400 mt-0.5">Most frequently purchased · group & safety</div>
+                  </div>
+                  {!medicinesLoading && (
+                    <span className="text-xs text-slate-400">
+                      From {customer.frequentlyBoughtList?.length || 0} purchase records
+                    </span>
+                  )}
+                </div>
+                <div className="divide-y divide-slate-50">
+                  {!recommendedProducts.length ? (
+                    <div className="px-5 py-10 text-center text-xs text-slate-400">
+                      No purchase history recorded for this customer yet.
+                    </div>
+                  ) : recommendedProducts.map((item) => {
+                    const meta = medicinesDetail[item.product];
+                    const product = meta?.product;
+                    return (
+                      <div key={item.product} className="px-5 py-3.5">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                              <Pill size={14} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-semibold text-slate-800 truncate">{item.name}</span>
+                                {product?.is_sensitive && (
+                                  <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-md bg-red-50 text-red-700 border border-red-200">
+                                    Sensitive · Requires Pharmacist Approval
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-400 mt-0.5">
+                                Bought {item.quantity}× · ৳{item.spent.toLocaleString()} total
+                              </div>
+                            </div>
+                          </div>
+                          {product?.group_name && (
+                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+                              {product.group_name}
+                            </span>
+                          )}
+                        </div>
+                        {medicinesLoading ? (
+                          <div className="mt-2 text-[11px] text-slate-400">Loading group and safety details...</div>
+                        ) : meta?.related?.length > 0 ? (
+                          <div className="mt-2 flex items-start gap-1.5 flex-wrap">
+                            <span className="text-[11px] text-slate-400 mt-0.5 shrink-0">Same group:</span>
+                            {meta.related.slice(0, 3).map((rp) => (
+                              <span key={rp.id} className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                                {rp.name}
+                                {rp.is_sensitive && <ShieldAlert size={10} className="text-red-500" />}
+                              </span>
+                            ))}
+                            {meta.related.length > 3 && (
+                              <span className="text-[11px] text-slate-400 mt-0.5">+{meta.related.length - 3} more</span>
+                            )}
+                          </div>
+                        ) : product?.group_name && product.group_name !== '—' ? (
+                          <div className="mt-2 text-[11px] text-slate-400">No active related medicines in this group.</div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
               <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
@@ -2428,6 +2664,12 @@ function CustomerProfileView({ customerId, customers, reminders: allReminders = 
       {/* Medicine Reminders Sub-Tab */}
       {activeProfileTab === 'reminders' && (
         <div className="flex flex-col gap-4">
+          {interactionError && (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 shadow-2xs">
+              <AlertTriangle size={14} className="shrink-0" />
+              <span>{interactionError}</span>
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             {customerReminders.filter((r) => r.daysLeft !== null && r.daysLeft <= 3 && r.status === 'Active').length > 0 && (
               <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-amber-50/70 border border-amber-200 shadow-2xs">
@@ -2446,17 +2688,32 @@ function CustomerProfileView({ customerId, customers, reminders: allReminders = 
                 <span className="text-sm font-semibold text-slate-800">Medicine Reminders</span>
                 <span className="text-xs text-slate-400 font-normal">{customerReminders.length} reminders</span>
               </div>
-              <button
-                onClick={() => {
-                  setEditingReminder(null);
-                  setReminderForm({ medicine: '', dose: '', frequency: '', startDate: 'Aug 17, 2026', endDate: 'Ongoing' });
-                  setIsAddReminderOpen(true);
-                }}
-                className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-[#2563EB] text-white text-xs font-medium hover:bg-[#1d4ed8] shadow-2xs transition-colors cursor-pointer"
-              >
-                <Plus size={13} />
-                <span>Add Reminder</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {isPharmacist && (
+                  <button
+                    onClick={handleCheckInteractions}
+                    disabled={interactionMedicines.length < 2 || checkingInteractions}
+                    title={interactionMedicines.length < 2
+                      ? 'Add at least two known medicines (reminders or recommendations) to run the check'
+                      : 'Check known interactions between this customer\'s medicines'}
+                    className="h-8 px-3 flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-medium hover:bg-red-100 shadow-2xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {checkingInteractions ? <RefreshCw size={13} className="animate-spin" /> : <ShieldAlert size={13} />}
+                    <span>Check Interactions</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setEditingReminder(null);
+                    setReminderForm({ medicine: '', dose: '', frequency: '', startDate: 'Aug 17, 2026', endDate: 'Ongoing' });
+                    setIsAddReminderOpen(true);
+                  }}
+                  className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-[#2563EB] text-white text-xs font-medium hover:bg-[#1d4ed8] shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Plus size={13} />
+                  <span>Add Reminder</span>
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -2656,13 +2913,71 @@ function CustomerProfileView({ customerId, customers, reminders: allReminders = 
           </div>
         </div>
       )}
+
+      {/* ─── DRUG INTERACTION REVIEW MODAL (pharmacist) ─── */}
+      {isPharmacist && pendingInteractions && pendingInteractions.length > 0 && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col border border-slate-100">
+            <div className="p-5 border-b border-slate-100 flex items-start gap-3">
+              <div className="w-10 h-10 bg-red-100 text-red-600 rounded-full flex items-center justify-center shrink-0">
+                <ShieldAlert size={20} />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-sm font-semibold text-slate-900">Drug Interaction Warning</h4>
+                <p className="text-xs text-slate-500 font-normal mt-0.5">
+                  Known interactions between this customer's regularly purchased medicines and active reminders. Review before dispensing.
+                </p>
+              </div>
+              <button
+                onClick={() => setPendingInteractions(null)}
+                className="ml-auto text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4 flex flex-col gap-2.5 max-h-[50vh] overflow-y-auto scrollbar-thin">
+              {pendingInteractions.map((ix, i) => {
+                const level = INTERACTION_LEVELS[ix.level] || INTERACTION_LEVELS.caution;
+                return (
+                  <div key={`${ix.interaction_id}-${i}`} className="border border-slate-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-slate-900">
+                        {ix.products?.map((p) => p.name).join('  +  ')}
+                      </span>
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${level.badge}`}>
+                        {level.label}
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-slate-500 font-normal mt-1">
+                      {ix.description || `Known interaction between ${ix.drug_a || 'these medicines'} and ${ix.drug_b || 'these medicines'}.`}
+                    </p>
+                    <div className="mt-2 flex items-start gap-1.5 bg-slate-50 border border-slate-100 rounded-md p-2">
+                      <Info size={12} className="text-slate-400 mt-0.5 shrink-0" />
+                      <p className="text-[12px] font-normal text-slate-600 leading-snug">{ix.recommendation}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="p-4 border-t border-slate-100">
+              <button
+                onClick={() => setPendingInteractions(null)}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs cursor-pointer shadow-sm"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── 9. Main Exported CRM Module ──────────────────────────────────────────────
 
-export function CRMModule({ onNavigate, initialTab = 'dashboard' }) {
+export function CRMModule({ onNavigate, initialTab = 'dashboard', role = ROLES.PHARMACIST }) {
+  const isPharmacist = role === ROLES.PHARMACIST;
   const [activeTab, setActiveTab] = useState(initialTab);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [customers, setCustomers] = useState([]);
@@ -2736,7 +3051,9 @@ export function CRMModule({ onNavigate, initialTab = 'dashboard' }) {
       {!selectedCustomerId && (
         <div className="shrink-0 mt-1">
           <h2 className="text-[17px] font-bold text-slate-900 tracking-tight">{meta.title}</h2>
-          <p className="text-xs text-slate-500 font-normal mt-0.5">{meta.description}</p>
+          <p className="text-xs text-slate-500 font-normal mt-0.5">
+            {activeTab === 'tiers' && isPharmacist ? 'Search and view customer CRM profiles' : meta.description}
+          </p>
         </div>
       )}
 
@@ -2760,6 +3077,7 @@ export function CRMModule({ onNavigate, initialTab = 'dashboard' }) {
           customerId={selectedCustomerId}
           customers={customers}
           reminders={reminders}
+          role={role}
           onBack={() => setSelectedCustomerId(null)}
         />
       ) : loading || loadError ? null : activeTab === 'dashboard' ? (
@@ -2775,6 +3093,7 @@ export function CRMModule({ onNavigate, initialTab = 'dashboard' }) {
         <CustomerTiersView
           customers={customers}
           onSelectCustomer={handleSelectCustomer}
+          showTierPlans={!isPharmacist}
         />
       ) : activeTab === 'reminders' ? (
         <MedicineRemindersView

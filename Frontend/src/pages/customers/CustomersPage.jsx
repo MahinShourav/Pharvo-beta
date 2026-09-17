@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { fetchCustomers, createCustomer, updateCustomer } from "../../services/customer";
 import { fetchSales } from "../../services/pos";
+import { fetchCustomerSummary, fetchReminders } from "../../services/crm";
+import { CustomerProfileView, mapCrmCustomer, mapCrmReminder } from "../crm/CRMModule";
 import { ApiError } from "../../services/api";
 import { Card, CardHeader, StatCard, EmptyState, LoadingState, PageTitle } from "../../components/ui/Blocks";
 
@@ -65,7 +67,7 @@ const BLANK_FORM = {
   notes: "",
 };
 
-export default function CustomersPage() {
+export default function CustomersPage({ role }) {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -77,6 +79,14 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [profileSales, setProfileSales] = useState([]);
   const [profileLoading, setProfileLoading] = useState(false);
+
+  // Full Customer Details (header, summary cards, Overview / Purchase
+  // History / Health Information / Medicine Reminders / Receipts tabs)
+  // shown inside Customer Management for the chosen table row.
+  const [detailsCustomerId, setDetailsCustomerId] = useState(null);
+  const [detailsCustomers, setDetailsCustomers] = useState([]);
+  const [detailsReminders, setDetailsReminders] = useState([]);
+  const detailsReqRef = useRef(0);
 
   const [modalMode, setModalMode] = useState(null); // null | "add" | "edit"
   const [form, setForm] = useState(BLANK_FORM);
@@ -152,6 +162,37 @@ export default function CustomersPage() {
     }
   };
 
+  // Open the full Customer Details view for one table-row customer, using
+  // that row's real customer ID and live data. Reuses the existing
+  // CustomerProfileView — no new details page or duplicate modal.
+  const openDetails = async (customer) => {
+    const seq = ++detailsReqRef.current;
+    const phcId = `PHC-${String(customer.id).padStart(3, "0")}`;
+    setDetailsCustomerId(phcId);
+    setDetailsCustomers([]);
+    setDetailsReminders([]);
+    try {
+      const [summary, rems] = await Promise.all([
+        fetchCustomerSummary(customer.id).catch(() => null),
+        fetchReminders({ customer: customer.id }).catch(() => []),
+      ]);
+      if (seq !== detailsReqRef.current) return;
+      setDetailsCustomers([mapCrmCustomer(customer, summary)]);
+      setDetailsReminders((rems || []).map(mapCrmReminder));
+    } catch {
+      if (seq !== detailsReqRef.current) return;
+      setDetailsCustomers([mapCrmCustomer(customer, null)]);
+      setDetailsReminders([]);
+    }
+  };
+
+  const closeDetails = () => {
+    ++detailsReqRef.current;
+    setDetailsCustomerId(null);
+    setDetailsCustomers([]);
+    setDetailsReminders([]);
+  };
+
   const openAdd = () => {
     setForm(BLANK_FORM);
     setFormError("");
@@ -217,6 +258,20 @@ export default function CustomersPage() {
         subtitle="Search, filter and manage customer profiles, membership and purchase history"
       />
 
+      {detailsCustomerId ? (
+        detailsCustomers.length > 0 ? (
+          <CustomerProfileView
+            customerId={detailsCustomerId}
+            customers={detailsCustomers}
+            reminders={detailsReminders}
+            role={role}
+            onBack={closeDetails}
+          />
+        ) : (
+          <LoadingState label="Loading customer details..." />
+        )
+      ) : (
+      <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Total Customers" value={stats.total.toLocaleString()} sub="Registered customers" icon={Users} tone="blue" />
         <StatCard label="Loyalty Members" value={stats.members.toLocaleString()} sub="Bronze / Silver / Gold" icon={Award} tone="amber" />
@@ -337,8 +392,8 @@ export default function CustomersPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
-                          onClick={() => openProfile(c)}
-                          title="View profile"
+                          onClick={() => openDetails(c)}
+                          title="View details"
                           className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
                         >
                           <Eye size={14} />
@@ -363,6 +418,8 @@ export default function CustomersPage() {
           </div>
         )}
       </Card>
+      </>
+      )}
 
       {/* ─── Customer Profile Modal ─── */}
       {selectedCustomer && !modalMode && (

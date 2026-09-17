@@ -8,7 +8,9 @@ import {
   markAllNotificationsRead,
 } from "../../services/notifications";
 import { ApiError } from "../../services/api";
+import { ROLES } from "../../services/auth";
 import { Card, CardHeader, StatusBadge, LoadingState, EmptyState } from "../../components/ui/Blocks";
+import PharmacistNotificationsView from "./PharmacistNotificationsView";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -36,7 +38,14 @@ function timeAgo(iso) {
   return `${days}d ago`;
 }
 
-export default function NotificationsPage({ onChanged }) {
+export default function NotificationsPage({ onChanged, role = ROLES.PHARMACIST } = {}) {
+  if (role === ROLES.PHARMACIST) {
+    return <PharmacistNotificationsView onChanged={onChanged} />;
+  }
+  return <AdminNotificationsView onChanged={onChanged} />;
+}
+
+function AdminNotificationsView({ onChanged }) {
   const [filter, setFilter] = useState("all");
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);

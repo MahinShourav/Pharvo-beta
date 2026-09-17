@@ -5,6 +5,7 @@ import {
 import { fetchProducts, fetchCategories } from '../../services/medicine';
 import { fetchCustomers } from '../../services/customer';
 import { checkout, checkInteractions } from '../../services/pos';
+import { ROLES } from '../../services/auth';
 import { ApiError } from '../../services/api';
 import { formatBreakdownShort, formatEquivalents } from '../../utils/units';
 
@@ -12,9 +13,35 @@ const PAYMENT_METHODS = [
   { id: 'cash', label: 'Cash', backend: 'cash' },
   { id: 'digital', label: 'bKash / Digital', backend: 'bkash' },
   { id: 'split', label: 'Split', backend: 'split' },
+  { id: 'due', label: 'Due', backend: 'due' },
 ];
 
 const WALK_IN = { id: null, name: 'Walk-in Customer', phone: '', is_member: false };
+
+// ── CRM membership auto-discount (pharmacist POS only) ──────────────────────
+// The CRM eligibility rule: a cart line only qualifies when its line total is
+// STRICTLY greater than CRM_MIN_ELIGIBLE_LINE (100 BDT). 100 BDT exactly is
+// NOT eligible; 101+ BDT qualifies when the customer is a member.
+//
+// The auto discount is surfaced separately from the manual discount in the UI
+// but combined into the single `discount` value sent to the backend, so the
+// same discount is never applied twice and the backend stays the final
+// source of truth for pricing.
+const CRM_TIER_RATES = { bronze: 0.05, silver: 0.07, gold: 0.10 };
+const CRM_MIN_ELIGIBLE_LINE = 100;
+
+function computeCrmAutoDiscount(cart, customer) {
+  const tier = customer?.membership_tier;
+  const rate = tier ? (CRM_TIER_RATES[tier] || 0) : 0;
+  if (!Array.isArray(cart) || cart.length === 0 || !customer?.is_member || !rate) {
+    return { eligible: false, rate, tier: tier || null, eligibleLines: 0, amount: 0 };
+  }
+  const eligibleLines = cart.reduce((sum, item) =>
+    item.total > CRM_MIN_ELIGIBLE_LINE ? sum + Number(item.total) : sum, 0
+  );
+  const amount = Number((eligibleLines * rate).toFixed(2));
+  return { eligible: amount > 0, rate, tier, eligibleLines, amount };
+}
 
 // Selling units: PC (single piece), Strip and Box pack pricing comes from the
 // product API (`strip_price` / `box_price`). A missing price means the
@@ -80,7 +107,8 @@ function severityRank(level) {
   return order.indexOf(level);
 }
 
-export function SalesModule() {
+export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
+  const isPharmacist = role === ROLES.PHARMACIST;
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -104,11 +132,14 @@ export function SalesModule() {
   // Cart
   const [cart, setCart] = useState([]);
   const [discount, setDiscount] = useState('');
+  const [discountType, setDiscountType] = useState('amount'); // 'amount' (৳) | 'percent' (%)
 
   // Payment
   const [payMethod, setPayMethod] = useState('cash');
   const [cashReceived, setCashReceived] = useState('');
   const [digitalReceived, setDigitalReceived] = useState('');
+  const [dueReceived, setDueReceived] = useState('');
+  const [duePaidMethod, setDuePaidMethod] = useState('cash'); // method of the paid-now portion of a due sale
 
   // Checkout state
   const [checkingOut, setCheckingOut] = useState(false);
@@ -265,8 +296,11 @@ export function SalesModule() {
   const clearCart = () => {
     setCart([]);
     setDiscount('');
+    setDiscountType('amount');
     setCashReceived('');
     setDigitalReceived('');
+    setDueReceived('');
+    setDuePaidMethod('cash');
     setPendingApproval(null);
     setCheckoutError('');
     setInteractionWarnings([]);
@@ -275,7 +309,15 @@ export function SalesModule() {
 
   const totalItemCount = cart.reduce((acc, item) => acc + item.qty, 0);
   const subtotal = cart.reduce((acc, item) => acc + item.total, 0);
-  const discountAmount = Math.min(Number(discount) || 0, subtotal);
+  const crmAutoDiscount = computeCrmAutoDiscount(cart, customer);
+  const manualPct = Math.min(Math.max(Number(discount) || 0, 0), 100);
+  const manualDiscountAmount =
+    discountType === 'percent'
+      ? Number(((subtotal * manualPct) / 100).toFixed(2))
+      : Math.min(Number(discount) || 0, subtotal);
+  // CRM auto discount and manual discount are independent but only ever merged
+  // into a single discount value, so a sale never receives a double discount.
+  const discountAmount = Math.min(crmAutoDiscount.amount + manualDiscountAmount, subtotal);
   const grandTotal = Math.max(0, subtotal - discountAmount);
 
   const buildPayments = () => {
@@ -284,6 +326,21 @@ export function SalesModule() {
     }
     if (payMethod === 'digital') {
       return [{ method: 'bkash', amount: grandTotal }];
+    }
+    if (payMethod === 'due') {
+      if (!customer?.id) {
+        throw new ApiError(
+          'Due sales require a registered customer. Please select a customer first.',
+          400
+        );
+      }
+      const paidNow = Math.min(Math.max(Number(dueReceived) || 0, 0), grandTotal);
+      const dueAmount = Number((grandTotal - paidNow).toFixed(2));
+      const pays = [];
+      if (paidNow > 0) pays.push({ method: duePaidMethod, amount: paidNow });
+      if (dueAmount > 0) pays.push({ method: 'due', amount: dueAmount });
+      if (pays.length === 0) pays.push({ method: 'due', amount: 0 });
+      return pays;
     }
     const cashAmount = Number(cashReceived) || 0;
     const digitalAmount = Number(digitalReceived) || 0;
@@ -348,7 +405,7 @@ export function SalesModule() {
   const handleHoldSale = () => {
     if (cart.length === 0) return;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setHeldSale({ customer, cart, discount, time });
+    setHeldSale({ customer, cart, discount, discountType, time });
     clearCart();
   };
 
@@ -357,6 +414,7 @@ export function SalesModule() {
     setCustomer(heldSale.customer || WALK_IN);
     setCart(heldSale.cart || []);
     setDiscount(heldSale.discount ?? '');
+    setDiscountType(heldSale.discountType ?? 'amount');
     setHeldSale(null);
   };
 
@@ -427,6 +485,14 @@ export function SalesModule() {
                     {customer.is_member && (
                       <span className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded leading-none">
                         {customer.membership_tier ? customer.membership_tier : 'Member'}
+                      </span>
+                    )}
+                    {isPharmacist && crmAutoDiscount.eligible && (
+                      <span
+                        className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded leading-none"
+                        title={`CRM recommendation: ${Math.round(crmAutoDiscount.rate * 100)}% member discount on qualifying lines`}
+                      >
+                        CRM ৳{crmAutoDiscount.amount.toLocaleString()}
                       </span>
                     )}
                   </div>
@@ -684,18 +750,62 @@ export function SalesModule() {
               <span>Subtotal ({totalItemCount} items)</span>
               <span className="font-medium text-slate-900">৳{subtotal.toLocaleString()}</span>
             </div>
+            {isPharmacist && (
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-slate-500 font-normal">
+                  <span>CRM Auto Discount</span>
+                  {crmAutoDiscount.eligible ? (
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 leading-none capitalize">
+                      {crmAutoDiscount.tier} · {Math.round(crmAutoDiscount.rate * 100)}%
+                    </span>
+                  ) : (
+                    <span
+                      className="text-[10px] font-medium text-slate-400 border border-slate-200 rounded px-1.5 py-0.5 leading-none"
+                      title="Member auto discount is only available when a qualifying cart line exceeds ৳100."
+                    >
+                      {customer?.is_member ? 'below ৳101 threshold' : 'member only'}
+                    </span>
+                  )}
+                </div>
+                <span className={`font-medium ${crmAutoDiscount.amount > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                  {crmAutoDiscount.amount > 0 ? `-৳${crmAutoDiscount.amount.toLocaleString()}` : '৳0'}
+                </span>
+              </div>
+            )}
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500 font-normal">Discount</span>
+              <span className="text-slate-500 font-normal">{isPharmacist ? 'Manual Discount' : 'Discount'}</span>
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-500 font-normal">৳</span>
+                <div className="flex items-center rounded-md border border-slate-200 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('amount')}
+                    title="Flat amount discount (৳)"
+                    className={`px-1.5 py-0.5 text-[11px] font-semibold cursor-pointer ${discountType === 'amount' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    ৳
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('percent')}
+                    title="Percentage discount (%)"
+                    className={`px-1.5 py-0.5 text-[11px] font-semibold cursor-pointer ${discountType === 'percent' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    %
+                  </button>
+                </div>
                 <input
                   type="number"
                   min={0}
+                  max={discountType === 'percent' ? 100 : undefined}
                   value={discount}
                   onChange={e => setDiscount(e.target.value)}
                   placeholder="0"
+                  title={discountType === 'percent' ? 'Discount percent (0–100)' : 'Discount amount (৳)'}
                   className="w-20 px-1.5 py-0.5 text-center text-xs font-normal border border-slate-200 rounded outline-none"
                 />
+                {discountType === 'percent' && manualDiscountAmount > 0 && (
+                  <span className="text-slate-400 font-normal">-৳{manualDiscountAmount.toLocaleString()}</span>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-between pt-2.5 border-t border-slate-100">
@@ -707,7 +817,7 @@ export function SalesModule() {
           {/* CARD 3: PAYMENT METHOD & FINAL ACTIONS */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col gap-3">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">PAYMENT METHOD</span>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {PAYMENT_METHODS.map(m => {
                 const isSelected = payMethod === m.id;
                 return (
@@ -773,6 +883,47 @@ export function SalesModule() {
                     className="w-full px-3 py-2 text-xs font-normal rounded-lg border border-slate-200 outline-none bg-slate-50/50"
                   />
                 </div>
+              </div>
+            )}
+
+            {payMethod === 'due' && (
+              <div className="flex flex-col gap-2">
+                <div>
+                  <label className="text-[12px] font-normal text-slate-500 block mb-1">Paid Now (৳) — leave 0 for full due</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={dueReceived}
+                      onChange={e => setDueReceived(e.target.value)}
+                      placeholder="৳0"
+                      className="flex-1 px-3 py-2 text-xs font-normal rounded-lg border border-slate-200 outline-none bg-slate-50/50"
+                    />
+                    <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setDuePaidMethod('cash')}
+                        title="Paid-now amount received in cash"
+                        className={`px-2.5 py-2 text-[11px] font-semibold cursor-pointer ${duePaidMethod === 'cash' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        Cash
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDuePaidMethod('bkash')}
+                        title="Paid-now amount received via bKash"
+                        className={`px-2.5 py-2 text-[11px] font-semibold cursor-pointer ${duePaidMethod === 'bkash' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        bKash
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500 font-normal">Due remainder</span>
+                  <span className="font-semibold text-amber-600">৳{Math.max(0, grandTotal - (Number(dueReceived) || 0)).toLocaleString()}</span>
+                </div>
+                {!customer?.id && (
+                  <p className="text-[11px] text-amber-600 font-medium">Select a registered customer above — walk-in due is not allowed.</p>
+                )}
               </div>
             )}
 

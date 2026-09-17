@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   ShoppingCart,
   Pill,
-  Boxes,
   Users,
   HeartHandshake,
   ClipboardList,
@@ -26,6 +25,13 @@ import {
   markAllNotificationsRead,
 } from "../services/notifications";
 
+/**
+ * Sidebar navigation.
+ *
+ * An item without `roles` is visible to every staff role (admin and
+ * pharmacist). An item carrying `roles` is only shown to the listed roles,
+ * e.g. `roles: [ROLES.ADMIN]` for admin-only management sections.
+ */
 const NAV_SECTIONS = [
   {
     label: "MAIN MENU",
@@ -37,8 +43,7 @@ const NAV_SECTIONS = [
   {
     label: "MANAGEMENT",
     items: [
-      { key: "medicines", label: "Medicines", icon: Pill },
-      { key: "inventory", label: "Inventory", icon: Boxes },
+      { key: "medicines-inventory", label: "Medicines & Inventory", icon: Pill },
       { key: "customers", label: "Customers", icon: Users },
       { key: "crm", label: "CRM", icon: HeartHandshake },
     ],
@@ -56,6 +61,15 @@ const NAV_SECTIONS = [
     items: [{ key: "settings", label: "Settings", icon: Settings }],
   },
 ];
+
+function navSectionsForRole(role) {
+  return NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter(
+      (item) => !item.roles || item.roles.includes(role)
+    ),
+  })).filter((section) => section.items.length > 0);
+}
 
 const timeAgo = (iso) => {
   if (!iso) return "";
@@ -89,6 +103,7 @@ export default function AppShell({
   const userMenuRef = useRef(null);
 
   const isAdmin = user?.role === ROLES.ADMIN;
+  const navSections = navSectionsForRole(user?.role);
 
   const loadNotifications = useCallback(() => {
     fetchNotifications()
@@ -166,7 +181,7 @@ export default function AppShell({
 
         {/* Nav items */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-5 scrollbar-thin">
-          {NAV_SECTIONS.map((section) => (
+          {navSections.map((section) => (
             <div key={section.label} className="flex flex-col gap-1">
               {!collapsed && (
                 <span className="text-[11px] font-semibold text-slate-400 tracking-wider uppercase px-3.5 mb-1 block">

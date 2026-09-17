@@ -7,8 +7,7 @@ import PharmacistDashboard from "../pages/Dashboard/PharmacistDashboard";
 import { SalesModule } from "../pages/pos/Sales";
 import CustomersPage from "../pages/customers/CustomersPage";
 import CRMModule from "../pages/crm/CRMModule";
-import MedicinesPage from "../pages/medicines/MedicinesPage";
-import InventoryPage from "../pages/medicines/InventoryPage";
+import MedicinesInventoryPage from "../pages/medicines/MedicinesInventoryPage";
 import OrdersPage from "../pages/orders/OrdersPage";
 import ReportsPage from "../pages/reports/ReportsPage";
 import NotificationsPage from "../pages/notifications/NotificationsPage";
@@ -17,8 +16,7 @@ import SettingsPage from "../pages/settings/SettingsPage";
 const PAGE_META = {
   dashboard: { title: "Dashboard", subtitle: "Overview of your pharmacy operations today" },
   pos: { title: "POS / Sales", subtitle: "Point of sale and transaction history" },
-  medicines: { title: "Medicines", subtitle: "Product catalogue and pricing" },
-  inventory: { title: "Inventory", subtitle: "Stock levels, expiry and reorder status" },
+  "medicines-inventory": { title: "Medicines & Inventory", subtitle: "Manage medicines, stock levels, pricing and expiry status" },
   customers: { title: "Customer Management", subtitle: "Customer profiles, membership & purchase history" },
   crm: { title: "CRM", subtitle: "Customer relationship management" },
   orders: { title: "Orders", subtitle: "All recorded sales and invoices" },
@@ -83,15 +81,14 @@ export default function StaffApp() {
           onRefreshNotifications={loadUnread}
         />
       )}
-      {activeModule === "pos" && <SalesModule />}
-      {activeModule === "medicines" && <MedicinesPage />}
-      {activeModule === "inventory" && <InventoryPage />}
-      {activeModule === "customers" && <CustomersPage />}
-      {activeModule === "crm" && <CRMModule onNavigate={handlePageChange} />}
-      {activeModule === "orders" && <OrdersPage />}
+      {activeModule === "pos" && <SalesModule role={user?.role} />}
+      {activeModule === "medicines-inventory" && <MedicinesInventoryPage role={user?.role} />}
+      {activeModule === "customers" && <CustomersPage role={user?.role} />}
+      {activeModule === "crm" && <CRMModule role={user?.role} onNavigate={handlePageChange} />}
+      {activeModule === "orders" && <OrdersPage role={user?.role} />}
       {activeModule === "reports" && <ReportsPage />}
-      {activeModule === "notifications" && <NotificationsPage onChanged={loadUnread} />}
-      {activeModule === "settings" && <SettingsPage user={user || {}} onLogout={handleLogout} />}
+      {activeModule === "notifications" && <NotificationsPage role={user?.role} onChanged={loadUnread} />}
+      {activeModule === "settings" && <SettingsPage user={user || {}} role={user?.role} onLogout={handleLogout} />}
     </AppShell>
   );
 }

@@ -1,9 +1,12 @@
 from datetime import date
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from purchases.models import Purchase
-from tests.helpers import auth_client, make_product, make_staff, make_supplier, make_user
+from tests.helpers import auth_client, make_product, make_staff, make_supplier
+
+UserModel = get_user_model()
 
 
 def _purchase_payload(supplier_id, product_id, quantity, unit_price, invoice,
@@ -27,7 +30,6 @@ class PurchaseTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.staff = make_staff("pur_staff")
-        cls.clerk = make_user("pur_clerk")
         cls.supplier = make_supplier("PurchaseSource")
         cls.product = make_product(barcode="BC-PUR", stock_quantity=50)
 
@@ -43,10 +45,58 @@ class PurchaseTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 55)
 
-    def test_non_staff_cannot_create(self):
-        response = auth_client(self.clerk).post(
+    def test_non_pharmacy_cannot_create(self):
+        customer_user = UserModel.objects.create_user(
+            username="pur_customer_user",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            is_staff=False,
+        )
+        response = auth_client(customer_user).post(
             "/api/purchases/",
             _purchase_payload(self.supplier.id, self.product.id, 1, "10.00", "PUR-DENY"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_pharmacist_can_create_purchase_and_stock_increases(self):
+        pharmacist = UserModel.objects.create_user(
+            username="pur_pharmacist",
+            password="testpass123",
+            role=UserModel.Role.PHARMACIST,
+            is_staff=False,
+        )
+        client = auth_client(pharmacist)
+        response = client.post(
+            "/api/purchases/",
+            _purchase_payload(self.supplier.id, self.product.id, 5, "10.00", "PUR-PH1"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["user_username"], "pur_pharmacist")
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 55)
+
+    def test_pharmacist_can_read_purchases(self):
+        pharmacist = UserModel.objects.create_user(
+            username="pur_pharmacist_read",
+            password="testpass123",
+            role=UserModel.Role.PHARMACIST,
+            is_staff=False,
+        )
+        response = auth_client(pharmacist).get("/api/purchases/")
+        self.assertEqual(response.status_code, 200)
+
+    def test_customer_role_cannot_create_purchase(self):
+        customer = UserModel.objects.create_user(
+            username="pur_customer",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            is_staff=False,
+        )
+        response = auth_client(customer).post(
+            "/api/purchases/",
+            _purchase_payload(self.supplier.id, self.product.id, 1, "10.00", "PUR-CUS"),
             format="json",
         )
         self.assertEqual(response.status_code, 403)

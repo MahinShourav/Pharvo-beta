@@ -1,7 +1,7 @@
 from django.db import transaction
 from rest_framework import viewsets
 
-from accounts.permissions import IsStaffOrReadOnly
+from accounts.permissions import IsPharmacyStaff
 from inventory.services import add_purchase_stock, remove_purchase_stock
 
 from .models import Purchase
@@ -10,7 +10,7 @@ from .serializers import PurchaseSerializer
 
 class PurchaseViewSet(viewsets.ModelViewSet):
     serializer_class = PurchaseSerializer
-    permission_classes = [IsStaffOrReadOnly]
+    permission_classes = [IsPharmacyStaff]
 
     def perform_create(self, serializer):
         with transaction.atomic():
