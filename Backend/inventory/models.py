@@ -16,6 +16,13 @@ class Category(models.Model):
 
 class Supplier(models.Model):
     name = models.CharField(max_length=255)
+    company = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="pharmacy/company they work for",
+        help_text="Pharmacy or pharmaceutical company the contact works for.",
+    )
     contact_person = models.CharField(max_length=255, blank=True, default="")
     phone = models.CharField(max_length=20, blank=True, default="")
     email = models.EmailField(blank=True, default="")

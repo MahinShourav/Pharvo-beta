@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -219,3 +220,146 @@ class CustomerTests(TestCase):
         response = auth_client(self.staff).delete(f"/api/customers/{target.id}/")
         self.assertEqual(response.status_code, 204)
         self.assertEqual(Customer.objects.filter(pk=target.id).count(), 0)
+
+
+class CustomerHealthTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff = make_staff("health_staff")
+        cls.pharmacist = get_user_model().objects.create_user(
+            username="health_pharmacist",
+            password="testpass123",
+            role=get_user_model().Role.PHARMACIST,
+            is_staff=False,
+        )
+
+    def test_staff_can_record_health_info(self):
+        target = make_customer(name="Health Patient", phone="555-9600")
+        for user in (self.staff, self.pharmacist):
+            response = auth_client(user).patch(
+                f"/api/customers/{target.id}/",
+                {
+                    "diabetes_status": "yes",
+                    "bp_systolic": 120,
+                    "bp_diastolic": 80,
+                    "bp_recorded_date": date.today().isoformat(),
+                    "health_notes": "Recorded during visit.",
+                },
+                format="json",
+            )
+            self.assertEqual(response.status_code, 200, msg=user.username)
+            self.assertEqual(response.data["diabetes_status"], "yes")
+            self.assertEqual(response.data["bp_systolic"], 120)
+            self.assertEqual(response.data["bp_diastolic"], 80)
+        target.refresh_from_db()
+        self.assertEqual(target.diabetes_status, "yes")
+
+    def test_health_defaults_and_clearing(self):
+        target = make_customer(name="Health Default", phone="555-9601")
+        response = auth_client(self.staff).get(f"/api/customers/{target.id}/")
+        self.assertEqual(response.data["diabetes_status"], "unknown")
+        self.assertIsNone(response.data["bp_systolic"])
+        cleared = auth_client(self.staff).patch(
+            f"/api/customers/{target.id}/",
+            {
+                "bp_systolic": 120,
+                "bp_diastolic": 80,
+            },
+            format="json",
+        )
+        self.assertEqual(cleared.status_code, 200)
+        cleared = auth_client(self.staff).patch(
+            f"/api/customers/{target.id}/",
+            {"bp_systolic": None, "bp_diastolic": None},
+            format="json",
+        )
+        self.assertEqual(cleared.status_code, 200)
+        self.assertIsNone(cleared.data["bp_systolic"])
+        self.assertIsNone(cleared.data["bp_diastolic"])
+
+    def test_invalid_bp_rejected(self):
+        target = make_customer(name="Health Invalid", phone="555-9602")
+        client = auth_client(self.staff)
+        bad_payloads = (
+            {"bp_systolic": 120},  # missing diastolic
+            {"bp_diastolic": 80},  # missing systolic
+            {"bp_systolic": 40, "bp_diastolic": 80},  # systolic out of range
+            {"bp_systolic": 120, "bp_diastolic": 300},  # diastolic out of range
+            {"bp_systolic": 80, "bp_diastolic": 120},  # systolic <= diastolic
+            {
+                "bp_systolic": 120,
+                "bp_diastolic": 80,
+                "bp_recorded_date": (date.today() + timedelta(days=1)).isoformat(),
+            },
+            {"diabetes_status": "maybe"},
+        )
+        for payload in bad_payloads:
+            self.assertEqual(
+                client.patch(
+                    f"/api/customers/{target.id}/", payload, format="json"
+                ).status_code,
+                400,
+                msg=payload,
+            )
+        target.refresh_from_db()
+        self.assertIsNone(target.bp_systolic)
+
+    def test_portal_sees_own_health_only(self):
+        from django.contrib.auth import get_user_model
+
+        UserModel = get_user_model()
+        owner = UserModel.objects.create_user(
+            username="portal_owner",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            email="owner@example.com",
+        )
+        other = UserModel.objects.create_user(
+            username="portal_other",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            email="other@example.com",
+        )
+        mine = make_customer(
+            name="Portal Owner", phone="555-9700", email="owner@example.com"
+        )
+        mine.diabetes_status = "no"
+        mine.bp_systolic = 118
+        mine.bp_diastolic = 76
+        mine.save()
+        theirs = make_customer(
+            name="Portal Other", phone="555-9701", email="other@example.com"
+        )
+        theirs.diabetes_status = "yes"
+        theirs.save()
+
+        # Owner claims their profile via the matching login email and sees it.
+        seen = auth_client(owner).get("/api/customers/me/")
+        self.assertEqual(seen.status_code, 200)
+        self.assertEqual(seen.data["id"], mine.id)
+        self.assertEqual(seen.data["diabetes_status"], "no")
+        self.assertEqual(seen.data["bp_systolic"], 118)
+        mine.refresh_from_db()
+        self.assertEqual(mine.user_id, owner.id)
+
+        # The other customer's data is not visible and cannot be addressed.
+        self.assertNotIn("yes", str(seen.data))
+        self.assertEqual(auth_client(owner).get("/api/customers/").status_code, 403)
+        self.assertEqual(
+            auth_client(owner).get(f"/api/customers/{theirs.id}/").status_code, 403
+        )
+        # Portal endpoint is read-only.
+        self.assertEqual(
+            auth_client(owner)
+            .patch("/api/customers/me/", {"diabetes_status": "yes"}, format="json")
+            .status_code,
+            405,
+        )
+        # Unlinked customer with no matching email gets a clear 404.
+        lonely = UserModel.objects.create_user(
+            username="portal_lonely",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            email="lonely@example.com",
+        )
+        self.assertEqual(auth_client(lonely).get("/api/customers/me/").status_code, 404)

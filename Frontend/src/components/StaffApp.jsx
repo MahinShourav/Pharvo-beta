@@ -8,6 +8,8 @@ import { SalesModule } from "../pages/pos/Sales";
 import CustomersPage from "../pages/customers/CustomersPage";
 import CRMModule from "../pages/crm/CRMModule";
 import MedicinesInventoryPage from "../pages/medicines/MedicinesInventoryPage";
+import SuppliersPage from "../pages/suppliers/SuppliersPage";
+import SupplierOrdersDashboard from "../pages/suppliers/SupplierOrdersDashboard";
 import OrdersPage from "../pages/orders/OrdersPage";
 import ReportsPage from "../pages/reports/ReportsPage";
 import NotificationsPage from "../pages/notifications/NotificationsPage";
@@ -17,6 +19,8 @@ const PAGE_META = {
   dashboard: { title: "Dashboard", subtitle: "Overview of your pharmacy operations today" },
   pos: { title: "POS / Sales", subtitle: "Point of sale and transaction history" },
   "medicines-inventory": { title: "Medicines & Inventory", subtitle: "Manage medicines, stock levels, pricing and expiry status" },
+  suppliers: { title: "Suppliers", subtitle: "Manage supplier companies, contacts and linked medicines" },
+  "supplier-orders": { title: "Supplier & Orders", subtitle: "Stock alerts, suppliers and manual order requests" },
   customers: { title: "Customer Management", subtitle: "Customer profiles, membership & purchase history" },
   crm: { title: "CRM", subtitle: "Customer relationship management" },
   orders: { title: "Orders", subtitle: "All recorded sales and invoices" },
@@ -83,6 +87,12 @@ export default function StaffApp() {
       )}
       {activeModule === "pos" && <SalesModule role={user?.role} />}
       {activeModule === "medicines-inventory" && <MedicinesInventoryPage role={user?.role} />}
+      {activeModule === "suppliers" && user?.role === ROLES.ADMIN && (
+        <SuppliersPage role={user?.role} />
+      )}
+      {activeModule === "supplier-orders" && user?.role === ROLES.ADMIN && (
+        <SupplierOrdersDashboard role={user?.role} />
+      )}
       {activeModule === "customers" && <CustomersPage role={user?.role} />}
       {activeModule === "crm" && <CRMModule role={user?.role} onNavigate={handlePageChange} />}
       {activeModule === "orders" && <OrdersPage role={user?.role} />}

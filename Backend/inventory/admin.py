@@ -24,8 +24,8 @@ class MedicineGroupAdmin(admin.ModelAdmin):
 
 @admin.register(Supplier)
 class SupplierAdmin(admin.ModelAdmin):
-    list_display = ("name", "contact_person", "phone", "email")
-    search_fields = ("name", "contact_person", "phone", "email")
+    list_display = ("name", "company", "contact_person", "phone", "email")
+    search_fields = ("name", "company", "contact_person", "phone", "email")
 
 
 @admin.register(Product)

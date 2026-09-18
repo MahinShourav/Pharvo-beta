@@ -103,3 +103,81 @@ export async function fetchProductInteractions(productId) {
 export async function createProduct(data) {
   return request("/inventory/products/", { method: "POST", body: data });
 }
+
+/**
+ * Update a product's supplier association (admin; Django staff write).
+ *
+ * Reuses the existing Product endpoint — `supplier` is the single FK on
+ * `inventory.Product` (nullable). Pass `null` to unassign.
+ *
+ * @param {number} productId
+ * @param {number|null} supplierId
+ * @returns {Promise<object>}
+ */
+export async function updateProductSupplier(productId, supplierId) {
+  return request(`/inventory/products/${productId}/`, {
+    method: "PATCH",
+    body: { supplier: supplierId },
+  });
+}
+
+/**
+ * Create a supplier (admin; reuses existing Supplier table/API).
+ * @param {object} data - { name, company, contact_person, phone, is_active }
+ * @returns {Promise<object>}
+ */
+export async function createSupplier(data) {
+  return request("/inventory/suppliers/", { method: "POST", body: data });
+}
+
+/**
+ * Update a supplier (admin; reuses existing Supplier table/API).
+ * @param {number} id
+ * @param {object} data
+ * @returns {Promise<object>}
+ */
+export async function updateSupplier(id, data) {
+  return request(`/inventory/suppliers/${id}/`, { method: "PATCH", body: data });
+}
+
+/**
+ * Delete a supplier (admin; backend PROTECTs suppliers with purchases).
+ * Prefer deactivation (`is_active: false`) over deletion.
+ * @param {number} id
+ * @returns {Promise<void>}
+ */
+export async function deleteSupplier(id) {
+  return request(`/inventory/suppliers/${id}/`, { method: "DELETE" });
+}
+
+/**
+ * List medicines supplied by one supplier.
+ * Reuses `GET /api/inventory/suppliers/{id}/products/`.
+ * @param {number} supplierId
+ * @returns {Promise<object[]>}
+ */
+export async function fetchSupplierProducts(supplierId) {
+  return request(`/inventory/suppliers/${supplierId}/products/`);
+}
+
+/**
+ * Fetch a supplier's purchase/stock summary.
+ * Reuses `GET /api/inventory/suppliers/{id}/summary/`.
+ * @param {number} supplierId
+ * @returns {Promise<object>}
+ */
+export async function fetchSupplierSummary(supplierId) {
+  return request(`/inventory/suppliers/${supplierId}/summary/`);
+}
+
+/**
+ * List received purchase records for one supplier (order history).
+ * Reuses `GET /api/inventory/suppliers/{id}/purchases/` — each purchase
+ * carries items with the unit price paid, which doubles as the supplier
+ * price history per medicine.
+ * @param {number} supplierId
+ * @returns {Promise<object[]>}
+ */
+export async function fetchSupplierPurchases(supplierId) {
+  return request(`/inventory/suppliers/${supplierId}/purchases/`);
+}

@@ -23,6 +23,13 @@ import { fetchInteractions, fetchProducts } from "../../services/medicine";
 import { fetchReminders } from "../../services/crm";
 import { ApiError } from "../../services/api";
 import { SUPPLIER_ORDERS_STORAGE_KEY } from "../orders/SupplierOrdersView";
+import {
+  itemUnit,
+  itemPcsPerUnit,
+  lineCost,
+  orderTotalCost,
+  unitNoun,
+} from "../../utils/orderUnits.mjs";
 import { Card, CardHeader, StatusBadge, LoadingState, EmptyState } from "../../components/ui/Blocks";
 
 const FILTERS = [
@@ -55,6 +62,7 @@ function interactionMeta(level) {
 const ORDER_STATUS_PILL = {
   draft: "bg-slate-100 text-slate-500 border-slate-200",
   requested: "bg-amber-50 text-amber-700 border-amber-200",
+  partially_received: "bg-blue-50 text-blue-700 border-blue-200",
   received: "bg-emerald-50 text-emerald-700 border-emerald-200",
   cancelled: "bg-red-50 text-red-700 border-red-200",
 };
@@ -62,6 +70,7 @@ const ORDER_STATUS_PILL = {
 const ORDER_STATUS_DOT = {
   draft: "bg-slate-400",
   requested: "bg-amber-500",
+  partially_received: "bg-blue-500",
   received: "bg-emerald-500",
   cancelled: "bg-red-500",
 };
@@ -74,6 +83,7 @@ function orderStatusMeta(status) {
   const map = {
     draft: { icon: ClipboardList, tone: "bg-slate-100 text-slate-500", label: "Draft" },
     requested: { icon: Clock, tone: "bg-amber-50 text-amber-600", label: "Requested" },
+    partially_received: { icon: Clock, tone: "bg-blue-50 text-blue-600", label: "Partially received" },
     received: { icon: PackageCheck, tone: "bg-emerald-50 text-emerald-600", label: "Received" },
     cancelled: { icon: Ban, tone: "bg-red-50 text-red-600", label: "Cancelled" },
   };
@@ -81,7 +91,8 @@ function orderStatusMeta(status) {
 }
 
 function statusLabel(status) {
-  return String(status || "—").charAt(0).toUpperCase() + String(status || "").slice(1);
+  const text = String(status || "—").replace(/_/g, " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function money(value) {
@@ -111,10 +122,7 @@ function timeAgo(iso) {
 }
 
 function orderTotal(order) {
-  return (order.items || []).reduce(
-    (sum, item) => sum + Number(item.costPrice || 0) * Number(item.quantity || 0),
-    0
-  );
+  return orderTotalCost(order);
 }
 
 export default function PharmacistNotificationsView({ onChanged }) {
@@ -559,7 +567,7 @@ export default function PharmacistNotificationsView({ onChanged }) {
                   <div key={it.productId} className="px-4 py-2.5 flex items-center justify-between gap-3">
                     <span className="text-xs font-medium text-slate-700">{it.name}</span>
                     <span className="text-xs text-slate-500 font-normal whitespace-nowrap">
-                      {it.quantity} pc × {money(it.costPrice)} = <span className="text-slate-800 font-semibold">{money(it.quantity * it.costPrice)}</span>
+                      {it.quantity} {unitNoun(itemUnit(it), it.quantity)} × {money(itemPcsPerUnit(it) * Number(it.costPrice || 0))} = <span className="text-slate-800 font-semibold">{money(lineCost(it))}</span>
                     </span>
                   </div>
                 ))}

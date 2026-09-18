@@ -15,7 +15,7 @@ import {
 import { fetchCrmCustomers, fetchCustomerSummary, fetchCustomerPurchases, fetchReminders, createReminder, updateReminder } from '../../services/crm';
 import { fetchSales, checkInteractions } from '../../services/pos';
 import { fetchProducts, fetchProduct, fetchRelatedProducts } from '../../services/medicine';
-import { createCustomer } from '../../services/customer';
+import { createCustomer, fetchCustomer, patchCustomer } from '../../services/customer';
 import { ApiError } from '../../services/api';
 import { ROLES } from '../../services/auth';
 
@@ -1943,6 +1943,244 @@ function NotificationsView() {
 
 // ─── 8. Customer Profile View (With 5 Sub-Tabs) ───────────────────────────────
 
+// ─── Staff-recorded Health Information (backend-backed) ─────────────────────
+// Manual entries only: diabetes status, blood pressure reading, recorded
+// date and notes. Rendered in the Customer Profile "Health Information"
+// sub-tab for Admin and Pharmacist (view/add/edit), and mirrored read-only
+// in the Customer Portal. No diagnosis or assessment is ever generated here.
+
+const DIABETES_OPTIONS = [
+  { value: 'unknown', label: 'Unknown' },
+  { value: 'yes', label: 'Yes' },
+  { value: 'no', label: 'No' },
+];
+
+const diabetesLabel = (value) =>
+  (DIABETES_OPTIONS.find((o) => o.value === value) || {}).label || 'Unknown';
+
+function parseBpInput(value) {
+  const text = (value || '').trim();
+  if (!text) return { systolic: null, diastolic: null };
+  const match = text.match(/^(\d{1,3})\s*\/\s*(\d{1,3})$/);
+  if (!match) {
+    return { error: 'Enter blood pressure as systolic/diastolic, for example 120/80.' };
+  }
+  const systolic = Number(match[1]);
+  const diastolic = Number(match[2]);
+  if (!(systolic >= 50 && systolic <= 300)) {
+    return { error: 'Systolic reading must be between 50 and 300.' };
+  }
+  if (!(diastolic >= 30 && diastolic <= 250)) {
+    return { error: 'Diastolic reading must be between 30 and 250.' };
+  }
+  if (!(systolic > diastolic)) {
+    return { error: 'Systolic reading must be greater than the diastolic reading.' };
+  }
+  return { systolic, diastolic };
+}
+
+function bpDisplay(record) {
+  if (record?.bp_systolic != null && record?.bp_diastolic != null) {
+    return `${record.bp_systolic}/${record.bp_diastolic}`;
+  }
+  return null;
+}
+
+function CustomerHealthSection({ customerId }) {
+  const [record, setRecord] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [form, setForm] = useState({
+    diabetes_status: 'unknown',
+    bp: '',
+    bp_recorded_date: '',
+    health_notes: '',
+  });
+
+  const load = useCallback(async () => {
+    if (!customerId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await fetchCustomer(customerId);
+      setRecord(data);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to load health information.');
+      setRecord(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [customerId]);
+
+  useEffect(() => {
+    setEditing(false);
+    setFormError('');
+    load();
+  }, [load]);
+
+  const startEdit = () => {
+    setForm({
+      diabetes_status: record?.diabetes_status || 'unknown',
+      bp: bpDisplay(record) || '',
+      bp_recorded_date: record?.bp_recorded_date || '',
+      health_notes: record?.health_notes || '',
+    });
+    setFormError('');
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    const parsed = parseBpInput(form.bp);
+    if (parsed.error) {
+      setFormError(parsed.error);
+      return;
+    }
+    setSaving(true);
+    setFormError('');
+    try {
+      const updated = await patchCustomer(customerId, {
+        diabetes_status: form.diabetes_status,
+        bp_systolic: parsed.systolic,
+        bp_diastolic: parsed.diastolic,
+        bp_recorded_date: form.bp_recorded_date || null,
+        health_notes: form.health_notes.trim(),
+      });
+      setRecord(updated);
+      setEditing(false);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Unable to save health information.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="text-xs text-slate-400 text-center py-8">Loading health information...</div>;
+  }
+
+  if (error && !record) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 shadow-2xs">
+        <AlertTriangle size={14} className="shrink-0" />
+        <span>{error}</span>
+      </div>
+    );
+  }
+
+  const bp = record ? bpDisplay(record) : null;
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Heart size={15} className="text-rose-500" />
+          <span className="text-sm font-semibold text-slate-800">Health Information</span>
+        </div>
+        {!editing && (
+          <button
+            onClick={startEdit}
+            className="h-8 px-3 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-medium hover:bg-slate-50 shadow-2xs transition-colors cursor-pointer"
+          >
+            <Edit2 size={13} />
+            <span>{bp || (record && record.diabetes_status !== 'unknown') || record?.health_notes ? 'Edit' : 'Add'}</span>
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="p-5 flex flex-col gap-3.5">
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Diabetes</label>
+            <select
+              value={form.diabetes_status}
+              onChange={(e) => setForm({ ...form, diabetes_status: e.target.value })}
+              className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-600 bg-white"
+            >
+              {DIABETES_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Blood Pressure (systolic/diastolic)</label>
+            <input
+              type="text"
+              value={form.bp}
+              onChange={(e) => setForm({ ...form, bp: e.target.value })}
+              placeholder="120/80 — leave blank if not measured"
+              className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-600 bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Recorded Date</label>
+            <input
+              type="date"
+              value={form.bp_recorded_date}
+              onChange={(e) => setForm({ ...form, bp_recorded_date: e.target.value })}
+              className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-600 bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Notes (optional)</label>
+            <textarea
+              value={form.health_notes}
+              onChange={(e) => setForm({ ...form, health_notes: e.target.value })}
+              placeholder="Optional health notes"
+              rows={2}
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-600 bg-white"
+            />
+          </div>
+          {formError && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+              <AlertTriangle size={13} className="shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="h-9 px-4 rounded-lg bg-[#2563EB] text-white text-xs font-medium hover:bg-[#1d4ed8] shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              onClick={() => { setEditing(false); setFormError(''); }}
+              disabled={saving}
+              className="h-9 px-4 rounded-lg border border-slate-200 text-slate-700 text-xs font-medium hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="p-3.5 rounded-lg bg-slate-50/70 border border-slate-100">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Diabetes</div>
+            <div className="text-sm font-semibold text-slate-800 mt-0.5">
+              {record && record.diabetes_status !== 'unknown' ? diabetesLabel(record.diabetes_status) : 'Not recorded'}
+            </div>
+          </div>
+          <div className="p-3.5 rounded-lg bg-slate-50/70 border border-slate-100">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Blood Pressure</div>
+            <div className="text-sm font-semibold text-slate-800 mt-0.5">{bp || 'Not recorded'}</div>
+            {record?.bp_recorded_date && (
+              <div className="text-[11px] text-slate-400 font-normal mt-0.5">Recorded {record.bp_recorded_date}</div>
+            )}
+          </div>
+          <div className="p-3.5 rounded-lg bg-slate-50/70 border border-slate-100 sm:col-span-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Notes</div>
+            <div className="text-xs text-slate-700 font-normal mt-0.5">{record?.health_notes || 'Not recorded'}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CustomerProfileView({ customerId, customers, reminders: allReminders = [], role = ROLES.PHARMACIST, onBack }) {
   const isPharmacist = role === ROLES.PHARMACIST;
   const [activeProfileTab, setActiveProfileTab] = useState('overview');
@@ -2647,17 +2885,21 @@ export function CustomerProfileView({ customerId, customers, reminders: allRemin
             </p>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-xl shadow-2xs p-10 flex flex-col items-center justify-center gap-3 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center">
-              <Heart size={24} className="text-slate-300" />
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-slate-700">No health records recorded</div>
-              <div className="text-xs text-slate-400 mt-1">
-                Blood pressure, diabetes and allergy details are not captured by the backend yet.
+          {rawCustomerId ? (
+            <CustomerHealthSection customerId={rawCustomerId} />
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-2xs p-10 flex flex-col items-center justify-center gap-3 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center">
+                <Heart size={24} className="text-slate-300" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-700">No health records recorded</div>
+                <div className="text-xs text-slate-400 mt-1">
+                  Health information is unavailable for this profile.
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 

@@ -12,6 +12,8 @@ import {
   HeartHandshake,
   ClipboardList,
   BarChart3,
+  Building2,
+  Truck,
   Settings,
   Shield,
   Search,
@@ -44,6 +46,7 @@ const NAV_SECTIONS = [
     label: "MANAGEMENT",
     items: [
       { key: "medicines-inventory", label: "Medicines & Inventory", icon: Pill },
+      { key: "suppliers", label: "Suppliers", icon: Building2, roles: [ROLES.ADMIN] },
       { key: "customers", label: "Customers", icon: Users },
       { key: "crm", label: "CRM", icon: HeartHandshake },
     ],
@@ -51,6 +54,7 @@ const NAV_SECTIONS = [
   {
     label: "BUSINESS",
     items: [
+      { key: "supplier-orders", label: "Supplier & Orders", icon: Truck, roles: [ROLES.ADMIN] },
       { key: "orders", label: "Orders", icon: ClipboardList },
       { key: "reports", label: "Reports", icon: BarChart3 },
       { key: "notifications", label: "Notifications", icon: Bell },

@@ -46,3 +46,22 @@ export async function markNotificationRead(id) {
 export async function markAllNotificationsRead() {
   return request("/notifications/mark-all-read/", { method: "POST" });
 }
+
+/**
+ * Approve-and-send a supplier order over WhatsApp (staff only).
+ *
+ * The server composes and sends the message; the client only supplies order
+ * data. Resolves with { status: "sent", message_id, to, client_ref }.
+ * Rejects with ApiError: 503 when WhatsApp is not configured server-side
+ * (nothing was sent), 502 on provider failure, 400 on invalid payload.
+ *
+ * @param {object} data - { order_ref, supplier_name, supplier_phone, items, estimated_total, order_date, delivery_note, client_ref }
+ *   supplier_phone is the per-order WhatsApp recipient; items carry unit ("box"/"pc").
+ * @returns {Promise<object>}
+ */
+export async function sendWhatsAppOrder(data) {
+  return request("/notifications/whatsapp/send-order/", {
+    method: "POST",
+    body: data,
+  });
+}

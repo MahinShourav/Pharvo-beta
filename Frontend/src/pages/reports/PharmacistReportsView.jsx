@@ -14,6 +14,7 @@ import {
   fetchCustomersReport,
 } from "../../services/reports";
 import { ApiError } from "../../services/api";
+import { orderTotalCost } from "../../utils/orderUnits.mjs";
 import { Card, CardHeader, StatCard, LoadingState, EmptyState } from "../../components/ui/Blocks";
 import { SUPPLIER_ORDERS_STORAGE_KEY } from "../orders/SupplierOrdersView";
 
@@ -35,15 +36,13 @@ function shortDate(iso) {
 }
 
 function orderTotal(order) {
-  return (order.items || []).reduce(
-    (sum, item) => sum + Number(item.costPrice || 0) * Number(item.quantity || 0),
-    0
-  );
+  return orderTotalCost(order);
 }
 
 const ORDER_STATUS_TONE = {
   draft: "text-slate-500",
   requested: "text-amber-600",
+  partially_received: "text-blue-600",
   received: "text-emerald-600",
   cancelled: "text-red-600",
 };
@@ -116,6 +115,7 @@ export default function PharmacistReportsView() {
     return {
       draft: count("draft"),
       requested: count("requested"),
+      partially_received: count("partially_received"),
       received: count("received"),
       cancelled: count("cancelled"),
     };
@@ -123,7 +123,7 @@ export default function PharmacistReportsView() {
   const awaitingOrders = useMemo(
     () =>
       [...supplierOrders]
-        .filter((o) => o.status === "requested")
+        .filter((o) => o.status === "requested" || o.status === "partially_received")
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
         .slice(0, 5),
     [supplierOrders]
@@ -287,6 +287,7 @@ export default function PharmacistReportsView() {
               <div className="p-4 flex flex-col gap-3">
                 {[
                   { label: "Requested", value: supplierStatus.requested, tone: "text-amber-600", icon: Truck },
+                  { label: "Partially Received", value: supplierStatus.partially_received, tone: "text-blue-600", icon: Truck },
                   { label: "Received", value: supplierStatus.received, tone: "text-emerald-600", icon: Receipt },
                   { label: "Draft", value: supplierStatus.draft, tone: "text-slate-500", icon: ClipboardList },
                   { label: "Cancelled", value: supplierStatus.cancelled, tone: "text-red-600", icon: AlertTriangle },

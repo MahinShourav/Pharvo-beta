@@ -14,6 +14,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     total_purchases = serializers.IntegerField(read_only=True, default=0)
     last_purchase = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = Customer
@@ -29,6 +30,12 @@ class CustomerSerializer(serializers.ModelSerializer):
             "member_since",
             "is_member",
             "loyalty_points",
+            "user",
+            "diabetes_status",
+            "bp_systolic",
+            "bp_diastolic",
+            "bp_recorded_date",
+            "health_notes",
             "total_purchases",
             "last_purchase",
             "status",
@@ -94,3 +101,70 @@ class CustomerSerializer(serializers.ModelSerializer):
         if value is not None and value > date.today():
             raise serializers.ValidationError("Date of birth cannot be in the future.")
         return value
+
+    def validate_bp_recorded_date(self, value):
+        if value is not None and value > date.today():
+            raise serializers.ValidationError(
+                "Blood pressure recorded date cannot be in the future."
+            )
+        return value
+
+    def validate(self, attrs):
+        # Blood pressure is stored as two integer fields. Accept both or
+        # neither; reject physiologically impossible readings. Partial updates
+        # only validate the fields actually supplied.
+        systolic = attrs.get("bp_systolic", None)
+        diastolic = attrs.get("bp_diastolic", None)
+        if self.instance is not None:
+            if systolic is None and "bp_systolic" not in attrs:
+                systolic = self.instance.bp_systolic
+            if diastolic is None and "bp_diastolic" not in attrs:
+                diastolic = self.instance.bp_diastolic
+        if (systolic is None) != (diastolic is None):
+            raise serializers.ValidationError(
+                {
+                    "bp_systolic": (
+                        "Both systolic and diastolic readings are required together. "
+                        "Clear both fields to remove the reading."
+                    )
+                }
+            )
+        if systolic is not None and diastolic is not None:
+            if not 50 <= systolic <= 300:
+                raise serializers.ValidationError(
+                    {"bp_systolic": "Systolic reading must be between 50 and 300."}
+                )
+            if not 30 <= diastolic <= 250:
+                raise serializers.ValidationError(
+                    {"bp_diastolic": "Diastolic reading must be between 30 and 250."}
+                )
+            if systolic <= diastolic:
+                raise serializers.ValidationError(
+                    {
+                        "bp_systolic": (
+                            "Systolic reading must be greater than the diastolic reading."
+                        )
+                    }
+                )
+        return attrs
+
+
+class MyCustomerSerializer(serializers.ModelSerializer):
+    """Limited read-only view of a customer's own profile for the portal.
+
+    Exposes only the customer's name and staff-recorded health details —
+    never loyalty, membership, or other customers' data.
+    """
+
+    class Meta:
+        model = Customer
+        fields = [
+            "id",
+            "name",
+            "diabetes_status",
+            "bp_systolic",
+            "bp_diastolic",
+            "bp_recorded_date",
+            "health_notes",
+        ]
+        read_only_fields = fields

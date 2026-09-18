@@ -29,6 +29,7 @@ class SupplierSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "company",
             "contact_person",
             "phone",
             "email",

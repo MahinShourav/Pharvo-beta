@@ -13,8 +13,13 @@ const PAYMENT_METHODS = [
   { id: 'cash', label: 'Cash', backend: 'cash' },
   { id: 'digital', label: 'bKash / Digital', backend: 'bkash' },
   { id: 'split', label: 'Split', backend: 'split' },
-  { id: 'due', label: 'Due', backend: 'due' },
 ];
+
+// Partial payments never need a separate DUE button: when the amount received
+// is less than the grand total, the unpaid remainder is saved automatically
+// with the existing backend `due` payment leg (see buildPayments).
+// An empty amount field means "paid in full"; an explicit 0 means "full due"
+// and requires a registered customer.
 
 const WALK_IN = { id: null, name: 'Walk-in Customer', phone: '', is_member: false };
 
@@ -138,14 +143,16 @@ export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
   const [payMethod, setPayMethod] = useState('cash');
   const [cashReceived, setCashReceived] = useState('');
   const [digitalReceived, setDigitalReceived] = useState('');
-  const [dueReceived, setDueReceived] = useState('');
-  const [duePaidMethod, setDuePaidMethod] = useState('cash'); // method of the paid-now portion of a due sale
 
   // Checkout state
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
   const [pendingApproval, setPendingApproval] = useState(null);
   const [receipt, setReceipt] = useState(null);
+  // Discount split captured at checkout time so the receipt can show the CRM
+  // and manual portions separately while the backend stays the source of
+  // truth for the combined discount total.
+  const [receiptDiscounts, setReceiptDiscounts] = useState(null);
 
   // Drug interaction warnings
   const [interactionWarnings, setInteractionWarnings] = useState([]);
@@ -299,8 +306,6 @@ export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
     setDiscountType('amount');
     setCashReceived('');
     setDigitalReceived('');
-    setDueReceived('');
-    setDuePaidMethod('cash');
     setPendingApproval(null);
     setCheckoutError('');
     setInteractionWarnings([]);
@@ -320,40 +325,95 @@ export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
   const discountAmount = Math.min(crmAutoDiscount.amount + manualDiscountAmount, subtotal);
   const grandTotal = Math.max(0, subtotal - discountAmount);
 
-  const buildPayments = () => {
-    if (payMethod === 'cash') {
-      return [{ method: 'cash', amount: grandTotal }];
-    }
-    if (payMethod === 'digital') {
-      return [{ method: 'bkash', amount: grandTotal }];
-    }
-    if (payMethod === 'due') {
-      if (!customer?.id) {
-        throw new ApiError(
-          'Due sales require a registered customer. Please select a customer first.',
-          400
-        );
-      }
-      const paidNow = Math.min(Math.max(Number(dueReceived) || 0, 0), grandTotal);
-      const dueAmount = Number((grandTotal - paidNow).toFixed(2));
-      const pays = [];
-      if (paidNow > 0) pays.push({ method: duePaidMethod, amount: paidNow });
-      if (dueAmount > 0) pays.push({ method: 'due', amount: dueAmount });
-      if (pays.length === 0) pays.push({ method: 'due', amount: 0 });
-      return pays;
-    }
-    const cashAmount = Number(cashReceived) || 0;
-    const digitalAmount = Number(digitalReceived) || 0;
-    if (cashAmount + digitalAmount !== grandTotal) {
+  const parseReceived = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  };
+
+  const round2 = (value) => Number((Math.round(Number(value) * 100) / 100).toFixed(2));
+
+  const requireCustomerForDue = () => {
+    if (!customer?.id) {
       throw new ApiError(
-        `Split payments must total ${grandTotal.toLocaleString()}. Current total is ${(cashAmount + digitalAmount).toLocaleString()}.`,
+        'Due balance requires a registered customer. Please select a customer first.',
         400
       );
     }
+  };
+
+  // Split a single-method tender (cash or bkash) into paid + automatic due.
+  // `raw` is null when the field was left blank, meaning "paid in full".
+  const splitTenderWithAutoDue = (raw, method) => {
+    if (grandTotal <= 0) return [{ method, amount: 0 }];
+    if (raw === null) return [{ method, amount: grandTotal }];
+    const paidRounded = round2(Math.min(raw, grandTotal));
+    const due = round2(grandTotal - paidRounded);
+    if (due <= 0) return [{ method, amount: grandTotal }];
+    requireCustomerForDue();
+    if (paidRounded <= 0) return [{ method: 'due', amount: grandTotal }];
     return [
-      { method: 'cash', amount: cashAmount },
-      { method: 'bkash', amount: digitalAmount },
+      { method, amount: paidRounded },
+      { method: 'due', amount: due },
     ];
+  };
+
+  const buildPayments = () => {
+    if (payMethod === 'cash') {
+      const raw = cashReceived.trim() === '' ? null : parseReceived(cashReceived);
+      return splitTenderWithAutoDue(raw, 'cash');
+    }
+    if (payMethod === 'digital') {
+      const raw = digitalReceived.trim() === '' ? null : parseReceived(digitalReceived);
+      return splitTenderWithAutoDue(raw, 'bkash');
+    }
+    const cashAmount = parseReceived(cashReceived);
+    const digitalAmount = parseReceived(digitalReceived);
+    const tendered = round2(cashAmount + digitalAmount);
+    if (tendered - grandTotal > 0.009) {
+      throw new ApiError(
+        `Split payments cannot exceed ${grandTotal.toLocaleString()}. Current total is ${tendered.toLocaleString()}.`,
+        400
+      );
+    }
+    if (grandTotal <= 0) {
+      return [
+        { method: 'cash', amount: 0 },
+        { method: 'bkash', amount: 0 },
+      ];
+    }
+    if (tendered >= grandTotal - 0.009) {
+      const cashRounded = round2(cashAmount);
+      return [
+        { method: 'cash', amount: cashRounded },
+        { method: 'bkash', amount: round2(grandTotal - cashRounded) },
+      ];
+    }
+    // Partial split: the unpaid remainder is saved as due automatically.
+    requireCustomerForDue();
+    const cashRounded = round2(cashAmount);
+    const digitalRounded = round2(digitalAmount);
+    const pays = [];
+    if (cashRounded > 0) pays.push({ method: 'cash', amount: cashRounded });
+    if (digitalRounded > 0) pays.push({ method: 'bkash', amount: digitalRounded });
+    pays.push({ method: 'due', amount: round2(grandTotal - cashRounded - digitalRounded) });
+    return pays;
+  };
+
+  // Live preview of the automatic due remainder for the current inputs.
+  // Returns 0 when the tender covers the grand total or nothing was entered.
+  const autoDuePreview = () => {
+    if (grandTotal <= 0) return 0;
+    if (payMethod === 'cash') {
+      if (cashReceived.trim() === '') return 0;
+      return Math.max(0, round2(grandTotal - parseReceived(cashReceived)));
+    }
+    if (payMethod === 'digital') {
+      if (digitalReceived.trim() === '') return 0;
+      return Math.max(0, round2(grandTotal - parseReceived(digitalReceived)));
+    }
+    const tendered = round2(parseReceived(cashReceived) + parseReceived(digitalReceived));
+    if (tendered <= 0 || tendered >= grandTotal - 0.009) return 0;
+    return round2(grandTotal - tendered);
   };
 
   const doCheckout = async (approveSensitive = false, approveInteractions = false) => {
@@ -381,6 +441,10 @@ export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
         setPendingApproval(result);
       } else {
         setReceipt(result);
+        setReceiptDiscounts({
+          crm: round2(crmAutoDiscount.amount),
+          manual: round2(manualDiscountAmount),
+        });
         await loadProducts(searchQuery, selectedCategory);
         setCustomer(WALK_IN);
         clearCart();
@@ -817,7 +881,7 @@ export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
           {/* CARD 3: PAYMENT METHOD & FINAL ACTIONS */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col gap-3">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">PAYMENT METHOD</span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {PAYMENT_METHODS.map(m => {
                 const isSelected = payMethod === m.id;
                 return (
@@ -838,7 +902,7 @@ export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
 
             {payMethod === 'cash' && (
               <div>
-                <label className="text-[12px] font-normal text-slate-500 block mb-1">Cash Received</label>
+                <label className="text-[12px] font-normal text-slate-500 block mb-1">Cash Received — leave blank for full payment, 0 for full due</label>
                 <input
                   value={cashReceived}
                   onChange={e => setCashReceived(e.target.value)}
@@ -846,12 +910,21 @@ export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
                   className="w-full px-3 py-2 text-xs font-normal rounded-lg border border-slate-200 outline-none bg-slate-50/50"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">Change: ৳{Math.max(0, (Number(cashReceived) || 0) - grandTotal).toLocaleString()}</p>
+                {autoDuePreview() > 0 && (
+                  <div className="flex items-center justify-between text-xs mt-1">
+                    <span className="text-slate-500 font-normal">Due Amount (auto)</span>
+                    <span className="font-semibold text-amber-600">৳{autoDuePreview().toLocaleString()}</span>
+                  </div>
+                )}
+                {autoDuePreview() > 0 && !customer?.id && (
+                  <p className="text-[11px] text-amber-600 font-medium mt-1">Select a registered customer above — walk-in due is not allowed.</p>
+                )}
               </div>
             )}
 
             {payMethod === 'digital' && (
               <div>
-                <label className="text-[12px] font-normal text-slate-500 block mb-1">bKash Payment</label>
+                <label className="text-[12px] font-normal text-slate-500 block mb-1">bKash Received — leave blank for full payment, 0 for full due</label>
                 <div className="flex items-center gap-2">
                   <input
                     value={digitalReceived}
@@ -860,68 +933,51 @@ export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
                     className="flex-1 px-3 py-2 text-xs font-normal rounded-lg border border-slate-200 outline-none bg-slate-50/50"
                   />
                 </div>
+                {autoDuePreview() > 0 && (
+                  <div className="flex items-center justify-between text-xs mt-1">
+                    <span className="text-slate-500 font-normal">Due Amount (auto)</span>
+                    <span className="font-semibold text-amber-600">৳{autoDuePreview().toLocaleString()}</span>
+                  </div>
+                )}
+                {autoDuePreview() > 0 && !customer?.id && (
+                  <p className="text-[11px] text-amber-600 font-medium mt-1">Select a registered customer above — walk-in due is not allowed.</p>
+                )}
               </div>
             )}
 
             {payMethod === 'split' && (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[12px] font-normal text-slate-500 block mb-1">Cash (৳)</label>
-                  <input
-                    value={cashReceived}
-                    onChange={e => setCashReceived(e.target.value)}
-                    placeholder="৳0"
-                    className="w-full px-3 py-2 text-xs font-normal rounded-lg border border-slate-200 outline-none bg-slate-50/50"
-                  />
-                </div>
-                <div>
-                  <label className="text-[12px] font-normal text-slate-500 block mb-1">bKash (৳)</label>
-                  <input
-                    value={digitalReceived}
-                    onChange={e => setDigitalReceived(e.target.value)}
-                    placeholder={`৳${grandTotal}`}
-                    className="w-full px-3 py-2 text-xs font-normal rounded-lg border border-slate-200 outline-none bg-slate-50/50"
-                  />
-                </div>
-              </div>
-            )}
-
-            {payMethod === 'due' && (
               <div className="flex flex-col gap-2">
-                <div>
-                  <label className="text-[12px] font-normal text-slate-500 block mb-1">Paid Now (৳) — leave 0 for full due</label>
-                  <div className="flex items-center gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[12px] font-normal text-slate-500 block mb-1">Cash (৳)</label>
                     <input
-                      value={dueReceived}
-                      onChange={e => setDueReceived(e.target.value)}
+                      value={cashReceived}
+                      onChange={e => setCashReceived(e.target.value)}
                       placeholder="৳0"
-                      className="flex-1 px-3 py-2 text-xs font-normal rounded-lg border border-slate-200 outline-none bg-slate-50/50"
+                      className="w-full px-3 py-2 text-xs font-normal rounded-lg border border-slate-200 outline-none bg-slate-50/50"
                     />
-                    <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setDuePaidMethod('cash')}
-                        title="Paid-now amount received in cash"
-                        className={`px-2.5 py-2 text-[11px] font-semibold cursor-pointer ${duePaidMethod === 'cash' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-                      >
-                        Cash
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDuePaidMethod('bkash')}
-                        title="Paid-now amount received via bKash"
-                        className={`px-2.5 py-2 text-[11px] font-semibold cursor-pointer ${duePaidMethod === 'bkash' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-                      >
-                        bKash
-                      </button>
-                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-normal text-slate-500 block mb-1">bKash (৳)</label>
+                    <input
+                      value={digitalReceived}
+                      onChange={e => setDigitalReceived(e.target.value)}
+                      placeholder="৳0"
+                      className="w-full px-3 py-2 text-xs font-normal rounded-lg border border-slate-200 outline-none bg-slate-50/50"
+                    />
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-normal">Due remainder</span>
-                  <span className="font-semibold text-amber-600">৳{Math.max(0, grandTotal - (Number(dueReceived) || 0)).toLocaleString()}</span>
+                  <span className="text-slate-500 font-normal">Tendered</span>
+                  <span className="font-medium text-slate-900">৳{(round2(parseReceived(cashReceived) + parseReceived(digitalReceived))).toLocaleString()} of ৳{grandTotal.toLocaleString()}</span>
                 </div>
-                {!customer?.id && (
+                {autoDuePreview() > 0 && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-normal">Due Amount (auto)</span>
+                    <span className="font-semibold text-amber-600">৳{autoDuePreview().toLocaleString()}</span>
+                  </div>
+                )}
+                {autoDuePreview() > 0 && !customer?.id && (
                   <p className="text-[11px] text-amber-600 font-medium">Select a registered customer above — walk-in due is not allowed.</p>
                 )}
               </div>
@@ -1142,63 +1198,126 @@ export function SalesModule({ role = ROLES.PHARMACIST } = {}) {
       )}
 
       {/* ─── SALE COMPLETED INVOICE MODAL ─── */}
-      {receipt && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col p-6">
-            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3">
-              <CheckCircle size={26} />
-            </div>
-            <h4 className="text-base font-semibold text-slate-900 text-center">Sale Completed</h4>
-            <p className="text-xs text-slate-500 font-normal mt-1 text-center">Invoice #{receipt.invoice_number}</p>
-
-            <div className="my-4 p-3 bg-slate-50 rounded-lg text-xs font-normal text-slate-700 flex flex-col gap-1 text-left">
-              <div className="flex justify-between">
-                <span>Customer:</span>
-                <span className="font-semibold text-slate-900">{receipt.customer_name || 'Walk-in'}</span>
+      {receipt && (() => {
+        // All receipt figures come from the saved sale/payment records.
+        // Grand Total = payable_amount; Amount Paid = non-due legs;
+        // Due = Grand Total − Amount Paid, never negative.
+        const rPayable = Number(receipt.payable_amount) || 0;
+        const rPaid = Number(
+          ((receipt.payments || [])
+            .filter((p) => p.method !== 'due')
+            .reduce((sum, p) => sum + Number(p.amount || 0), 0)).toFixed(2)
+        );
+        const rDue = Math.max(0, Number((rPayable - rPaid).toFixed(2)));
+        const rDiscount = Number(receipt.discount || 0);
+        const rCrm = receiptDiscounts ? Number(receiptDiscounts.crm) || 0 : 0;
+        const rManual = receiptDiscounts ? Number(receiptDiscounts.manual) || 0 : 0;
+        const showSplitDiscount = rCrm > 0 || rManual > 0;
+        const saleDateTime = receipt.created_at
+          ? new Date(receipt.created_at).toLocaleString()
+          : (receipt.sale_date || '');
+        return (
+          <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col p-6">
+              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                <CheckCircle size={26} />
               </div>
-              {receipt.items && (
-                <div className="flex flex-col gap-0.5 py-1 border-y border-slate-200 my-1">
-                  {receipt.items.map((it, i) => (
-                    <div key={i} className="flex justify-between">
-                      <span>{it.product_name} × {it.quantity} {(it.unit_display || 'pc').toLowerCase()}</span>
-                      <span>৳{Number(it.subtotal).toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
+              <h4 className="text-base font-semibold text-slate-900 text-center">PHARVO Pharmacy</h4>
+              <p className="text-xs text-slate-500 font-normal mt-1 text-center">Invoice #{receipt.invoice_number}</p>
+              {saleDateTime && (
+                <p className="text-[11px] text-slate-400 font-normal text-center">{saleDateTime}</p>
               )}
-              <div className="flex justify-between">
-                <span>Subtotal:</span>
-                <span className="font-medium text-slate-900">৳{Number(receipt.total_amount).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Discount:</span>
-                <span className="text-emerald-600">-৳{Number(receipt.discount || 0).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between pt-1 border-t border-slate-200">
-                <span className="font-medium">Total Paid:</span>
-                <span className="font-bold text-slate-900">৳{Number(receipt.payable_amount).toLocaleString()}</span>
-              </div>
-              {receipt.payments && (
-                <div className="flex flex-col gap-0.5">
-                  {receipt.payments.map((p, i) => (
-                    <div key={i} className="flex justify-between">
-                      <span className="capitalize">{p.method_display}</span>
-                      <span>৳{Number(p.amount).toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
-            <button
-              onClick={() => setReceipt(null)}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs cursor-pointer shadow-sm"
-            >
-              Start New Sale
-            </button>
+              <div className="my-4 p-3 bg-slate-50 rounded-lg text-xs font-normal text-slate-700 flex flex-col gap-1 text-left">
+                <div className="flex justify-between">
+                  <span>Customer:</span>
+                  <span className="font-semibold text-slate-900">{receipt.customer_name || 'Walk-in'}</span>
+                </div>
+                {receipt.customer_phone && (
+                  <div className="flex justify-between">
+                    <span>Phone:</span>
+                    <span className="font-medium text-slate-900">{receipt.customer_phone}</span>
+                  </div>
+                )}
+                {receipt.items && (
+                  <div className="flex flex-col gap-1 py-1 border-y border-slate-200 my-1">
+                    {receipt.items.map((it, i) => (
+                      <div key={i} className="flex flex-col gap-0.5">
+                        <div className="flex justify-between gap-2">
+                          <span className="font-medium text-slate-900">{it.product_name}</span>
+                          <span className="whitespace-nowrap">৳{Number(it.subtotal).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between gap-2 text-[11px] text-slate-400">
+                          <span>{it.quantity} × {(it.unit_display || it.unit || 'pc').toLowerCase()}</span>
+                          <span>৳{Number(it.unit_price).toLocaleString()} each</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Subtotal:</span>
+                  <span className="font-medium text-slate-900">৳{Number(receipt.total_amount).toLocaleString()}</span>
+                </div>
+                {showSplitDiscount ? (
+                  <>
+                    {rCrm > 0 && (
+                      <div className="flex justify-between">
+                        <span>CRM Discount:</span>
+                        <span className="text-emerald-600">-৳{rCrm.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {rManual > 0 && (
+                      <div className="flex justify-between">
+                        <span>Manual Discount:</span>
+                        <span className="text-emerald-600">-৳{rManual.toLocaleString()}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  rDiscount > 0 && (
+                    <div className="flex justify-between">
+                      <span>Discount:</span>
+                      <span className="text-emerald-600">-৳{rDiscount.toLocaleString()}</span>
+                    </div>
+                  )
+                )}
+                <div className="flex justify-between pt-1 border-t border-slate-200">
+                  <span className="font-medium">Grand Total:</span>
+                  <span className="font-bold text-slate-900">৳{rPayable.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Amount Paid:</span>
+                  <span className="font-semibold text-slate-900">৳{rPaid.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium">Due Amount:</span>
+                  <span className={`font-bold ${rDue > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {rDue > 0 ? `Due ৳${rDue.toLocaleString()}` : '৳0 (Paid in Full)'}
+                  </span>
+                </div>
+                {receipt.payments && receipt.payments.length > 0 && (
+                  <div className="flex flex-col gap-0.5 pt-1 border-t border-slate-200">
+                    {receipt.payments.map((p, i) => (
+                      <div key={i} className="flex justify-between">
+                        <span className="capitalize">{p.method_display || p.method}</span>
+                        <span>৳{Number(p.amount).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => { setReceipt(null); setReceiptDiscounts(null); }}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs cursor-pointer shadow-sm"
+              >
+                Start New Sale
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

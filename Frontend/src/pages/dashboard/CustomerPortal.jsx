@@ -2,10 +2,19 @@ import { useEffect, useState } from "react";
 import Logo from "../../components/Logo";
 import { AlertIcon, LogoutIcon, RoleBadgeIcon } from "../../components/Icons";
 import { clearStoredTokens, fetchMe, roleHomePath } from "../../services/auth";
+import { fetchMyCustomer } from "../../services/customer";
 import "../../styles/dashboard.css";
+
+const DIABETES_LABELS = { yes: "Yes", no: "No", unknown: "Unknown" };
+
+function healthValue(present, text) {
+  return present ? text : "Not recorded";
+}
 
 export default function CustomerPortal() {
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [profileMissing, setProfileMissing] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -14,13 +23,31 @@ export default function CustomerPortal() {
     fetchMe()
       .then((me) => {
         if (cancelled) {
-          return;
+          return null;
         }
         if (me.role !== "customer") {
           window.location.assign(roleHomePath(me.role));
-          return;
+          return null;
         }
         setUser(me);
+        // Load the latest staff-recorded health information from the backend
+        // every time the portal opens. The profile is resolved server-side
+        // from the account link, so this customer only ever sees their own.
+        return fetchMyCustomer().catch((err) => {
+          if (cancelled) {
+            return null;
+          }
+          if (err?.status === 404) {
+            setProfileMissing(true);
+            return null;
+          }
+          throw err;
+        });
+      })
+      .then((mine) => {
+        if (!cancelled && mine) {
+          setProfile(mine);
+        }
       })
       .catch((err) => {
         if (cancelled) {
@@ -84,6 +111,50 @@ export default function CustomerPortal() {
             </p>
           </div>
         )}
+
+        {/* Health Information — staff-recorded, read-only in the portal */}
+        <section className="portal-card" aria-label="Health Information">
+          <h2 className="portal-card__title">Health Information</h2>
+          <p className="portal-card__subtitle">
+            Recorded by pharmacy staff for safe dispensing. This is not a
+            medical record.
+          </p>
+          {profile ? (
+            <dl className="portal-health">
+              <div className="portal-health__row">
+                <dt>Diabetes</dt>
+                <dd>
+                  {profile.diabetes_status && profile.diabetes_status !== "unknown"
+                    ? DIABETES_LABELS[profile.diabetes_status] || "Not recorded"
+                    : "Not recorded"}
+                </dd>
+              </div>
+              <div className="portal-health__row">
+                <dt>Blood Pressure</dt>
+                <dd>
+                  {healthValue(
+                    profile.bp_systolic != null && profile.bp_diastolic != null,
+                    `${profile.bp_systolic}/${profile.bp_diastolic}`
+                  )}
+                </dd>
+              </div>
+              <div className="portal-health__row">
+                <dt>Recorded Date</dt>
+                <dd>{healthValue(!!profile.bp_recorded_date, profile.bp_recorded_date)}</dd>
+              </div>
+              <div className="portal-health__row">
+                <dt>Notes</dt>
+                <dd>{healthValue(!!profile.health_notes, profile.health_notes)}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="portal-card__empty">
+              {profileMissing
+                ? "No customer profile is linked to this account yet — health information will show as “Not recorded”. Please ask the pharmacy to link your profile."
+                : "Not recorded"}
+            </p>
+          )}
+        </section>
       </main>
     </div>
   );

@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from django.test import TestCase
 
+from inventory.models import Supplier
 from purchases.models import Purchase
 from sales.models import Sale, SaleItem
 from tests.helpers import (
@@ -91,7 +92,10 @@ class DashboardTests(TestCase):
         self.assertEqual(data["total_products"], 7)
         self.assertEqual(data["active_products"], 7)
         self.assertEqual(data["total_customers"], 1)
-        self.assertEqual(data["total_suppliers"], 1)
+        # Demo suppliers from the seed migration also live in the test DB,
+        # so assert against the real table count instead of a fixed number.
+        self.assertEqual(data["total_suppliers"], Supplier.objects.count())
+        self.assertGreaterEqual(data["total_suppliers"], 1)
         self.assertEqual(data["total_sales"], 2)
         self.assertEqual(float(data["total_revenue"]), 150.0)
         self.assertEqual(data["total_purchases"], 1)

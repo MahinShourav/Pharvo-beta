@@ -178,3 +178,28 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# WhatsApp order notifications (Meta WhatsApp Cloud API; optional).
+# When WHATSAPP_PHONE_NUMBER_ID / WHATSAPP_ACCESS_TOKEN are absent, the
+# send-order endpoint answers 503 and nothing is ever marked as sent.
+# Secrets live only in the environment — never in code, logs, or responses.
+
+WHATSAPP_API_URL = os.environ.get(
+    "WHATSAPP_API_URL", "https://graph.facebook.com/v21.0"
+)
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
+
+try:
+    WHATSAPP_TIMEOUT_SECONDS = int(
+        os.environ.get("WHATSAPP_TIMEOUT_SECONDS", "15") or 15
+    )
+except ValueError:
+    WHATSAPP_TIMEOUT_SECONDS = 15
+
+# Pharmacy details stamped into WhatsApp order messages.
+
+PHARMACY_NAME = os.environ.get("PHARMACY_NAME", "PHARVO Pharmacy")
+PHARMACY_PHONE = os.environ.get("PHARMACY_PHONE", "")
+PHARMACY_ADDRESS = os.environ.get("PHARMACY_ADDRESS", "")
