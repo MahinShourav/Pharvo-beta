@@ -9,7 +9,6 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsStaffOrReadOnly
 from interaction.services import (
-    detect_cart_interactions,
     interaction_match_terms,
     product_interaction_identifiers,
 )

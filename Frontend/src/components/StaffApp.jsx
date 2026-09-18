@@ -102,5 +102,3 @@ export default function StaffApp() {
     </AppShell>
   );
 }
-
-export { ROLES };

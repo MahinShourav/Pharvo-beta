@@ -82,21 +82,6 @@ export function AlertIcon({ className = "" }) {
   );
 }
 
-export function CheckIcon({ className = "" }) {
-  return (
-    <Svg className={className}>
-      <path
-        d="m6 12.5 4 4 8-9"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 export function ShieldCheckIcon({ className = "" }) {
   return (
     <Svg className={className}>

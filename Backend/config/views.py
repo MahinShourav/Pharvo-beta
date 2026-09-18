@@ -6,8 +6,6 @@ development the Vite dev server (http://localhost:5173) remains the preferred
 way to work on the frontend.
 """
 
-from pathlib import Path
-
 from django.conf import settings
 from django.http import HttpResponse
 
