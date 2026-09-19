@@ -199,15 +199,23 @@ class CustomerSerializer(serializers.ModelSerializer):
 class MyCustomerSerializer(serializers.ModelSerializer):
     """Limited read-only view of a customer's own profile for the portal.
 
-    Exposes only the customer's name and staff-recorded health details —
-    never loyalty, membership, or other customers' data.
+    Exposes only the customer's own contact details and staff-recorded
+    health details — never loyalty points or other customers' data.
     """
+
+    diabetes_records = DiabetesRecordSerializer(many=True, read_only=True)
+    blood_pressure_records = BloodPressureRecordSerializer(many=True, read_only=True)
 
     class Meta:
         model = Customer
         fields = [
             "id",
             "name",
+            "phone",
+            "email",
+            "address",
+            "date_of_birth",
+            "member_since",
             "diabetes_status",
             "diabetes_type",
             "diabetes_recorded_date",

@@ -62,3 +62,53 @@ export async function patchCustomer(id, data) {
 export async function fetchMyCustomer() {
   return request("/customers/me/");
 }
+
+/**
+ * Fetch the logged-in customer's own membership tier and purchase totals.
+ * Resolved server-side from the account link.
+ * @returns {Promise<object>}
+ */
+export async function fetchMySummary() {
+  return request("/customers/me/summary/");
+}
+
+/**
+ * Fetch the logged-in customer's own purchase history (newest first).
+ * Resolved server-side from the account link.
+ * @returns {Promise<object[]>}
+ */
+export async function fetchMyPurchases() {
+  return request("/customers/me/purchases/");
+}
+
+/**
+ * Fetch the logged-in customer's own medicine reminders.
+ * Resolved server-side from the account link.
+ * @returns {Promise<object[]>}
+ */
+export async function fetchMyReminders() {
+  return request("/customers/me/reminders/");
+}
+
+/**
+ * Staff: search customer profiles by email for portal-account linking.
+ * Returns matches with phone/address plus current link state so staff can
+ * confirm the right profile. Matching is by email only — never by name.
+ * @param {string} email
+ * @returns {Promise<{count: number, matches: object[]}>}
+ */
+export async function searchCustomersForLink(email) {
+  return request(`/customers/link-search/?email=${encodeURIComponent(email || "")}`);
+}
+
+/**
+ * Staff: link a confirmed customer profile to a customer portal account.
+ * The target is an explicitly identified portal account (username or email);
+ * the link is never assigned to the staff session account.
+ * Re-linking an already-linked profile requires `{ confirm: true }`.
+ * @param {object} data - customer_id, target_username and/or target_email, confirm
+ * @returns {Promise<object>}
+ */
+export async function linkCustomerProfile(data) {
+  return request("/customers/link/", { method: "POST", body: data });
+}

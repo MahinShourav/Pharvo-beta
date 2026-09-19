@@ -363,3 +363,376 @@ class CustomerHealthTests(TestCase):
             email="lonely@example.com",
         )
         self.assertEqual(auth_client(lonely).get("/api/customers/me/").status_code, 404)
+
+
+class MyPortalDataTests(TestCase):
+    """Customer Portal data endpoints (own profile data only)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from decimal import Decimal
+
+        from django.utils import timezone
+
+        from crm.models import Reminder
+        from sales.models import Sale, SaleItem
+        from tests.helpers import make_product
+
+        UserModel = get_user_model()
+        cls.staff = make_staff("portal_data_staff")
+        cls.owner = UserModel.objects.create_user(
+            username="portal_data_owner",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            email="dataowner@example.com",
+        )
+        cls.other = UserModel.objects.create_user(
+            username="portal_data_other",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            email="dataother@example.com",
+        )
+        cls.mine = make_customer(
+            name="Data Owner",
+            phone="555-9900",
+            email="dataowner@example.com",
+            address="7 Portal Lane",
+            membership_tier="gold",
+        )
+        cls.theirs = make_customer(
+            name="Data Other",
+            phone="555-9901",
+            email="dataother@example.com",
+            address="8 Portal Lane",
+        )
+        product = make_product(barcode="BC-PORTAL", stock_quantity=100)
+        sale = Sale.objects.create(
+            invoice_number="PORTAL-001",
+            customer=cls.mine,
+            user=cls.staff,
+            total_amount=Decimal("200.00"),
+            discount=Decimal("0"),
+            payable_amount=Decimal("200.00"),
+            payment_method="cash",
+            sale_date=date.today(),
+        )
+        SaleItem.objects.create(
+            sale=sale,
+            product=product,
+            unit="pc",
+            quantity=2,
+            unit_price=Decimal("100.00"),
+            subtotal=Decimal("200.00"),
+        )
+        other_sale = Sale.objects.create(
+            invoice_number="PORTAL-002",
+            customer=cls.theirs,
+            user=cls.staff,
+            total_amount=Decimal("50.00"),
+            discount=Decimal("0"),
+            payable_amount=Decimal("50.00"),
+            payment_method="cash",
+            sale_date=date.today(),
+        )
+        SaleItem.objects.create(
+            sale=other_sale,
+            product=product,
+            unit="pc",
+            quantity=1,
+            unit_price=Decimal("50.00"),
+            subtotal=Decimal("50.00"),
+        )
+        cls.reminder = Reminder.objects.create(
+            customer=cls.mine,
+            product=product,
+            title="Evening dose",
+            reminder_time=timezone.now() + timedelta(days=1),
+            is_active=True,
+        )
+        Reminder.objects.create(
+            customer=cls.theirs,
+            product=product,
+            title="Other dose",
+            reminder_time=timezone.now() + timedelta(days=1),
+            is_active=True,
+        )
+
+    def test_profile_includes_contact_details(self):
+        seen = auth_client(self.owner).get("/api/customers/me/")
+        self.assertEqual(seen.status_code, 200)
+        self.assertEqual(seen.data["phone"], "555-9900")
+        self.assertEqual(seen.data["email"], "dataowner@example.com")
+        self.assertEqual(seen.data["address"], "7 Portal Lane")
+
+    def test_summary_shows_membership_and_totals(self):
+        seen = auth_client(self.owner).get("/api/customers/me/summary/")
+        self.assertEqual(seen.status_code, 200)
+        self.assertEqual(seen.data["membership_tier"], "gold")
+        self.assertEqual(seen.data["total_purchases"], 1)
+        self.assertEqual(seen.data["total_spending"], "200.00")
+
+    def test_purchases_show_only_own_sales(self):
+        seen = auth_client(self.owner).get("/api/customers/me/purchases/")
+        self.assertEqual(seen.status_code, 200)
+        invoices = [s["invoice_number"] for s in seen.data]
+        self.assertIn("PORTAL-001", invoices)
+        self.assertNotIn("PORTAL-002", invoices)
+
+    def test_reminders_show_only_own(self):
+        seen = auth_client(self.owner).get("/api/customers/me/reminders/")
+        self.assertEqual(seen.status_code, 200)
+        titles = [r["title"] for r in seen.data]
+        self.assertIn("Evening dose", titles)
+        self.assertNotIn("Other dose", titles)
+
+    def test_other_customer_cannot_see_my_data(self):
+        seen = auth_client(self.other).get("/api/customers/me/purchases/")
+        self.assertEqual(seen.status_code, 200)
+        invoices = [s["invoice_number"] for s in seen.data]
+        self.assertNotIn("PORTAL-001", invoices)
+        self.assertIn("PORTAL-002", invoices)
+
+    def test_staff_forbidden_on_portal_data_endpoints(self):
+        client = auth_client(self.staff)
+        for url in (
+            "/api/customers/me/summary/",
+            "/api/customers/me/purchases/",
+            "/api/customers/me/reminders/",
+        ):
+            self.assertEqual(client.get(url).status_code, 403, msg=url)
+
+    def test_unlinked_customer_gets_404(self):
+        UserModel = get_user_model()
+        lonely = UserModel.objects.create_user(
+            username="portal_data_lonely",
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            email="datalonely@example.com",
+        )
+        client = auth_client(lonely)
+        for url in (
+            "/api/customers/me/summary/",
+            "/api/customers/me/purchases/",
+            "/api/customers/me/reminders/",
+        ):
+            self.assertEqual(client.get(url).status_code, 404, msg=url)
+
+    def test_anonymous_gets_401(self):
+        for url in (
+            "/api/customers/me/summary/",
+            "/api/customers/me/purchases/",
+            "/api/customers/me/reminders/",
+        ):
+            self.assertEqual(APIClient().get(url).status_code, 401, msg=url)
+
+
+class StaffCustomerLinkTests(TestCase):
+    """Staff-initiated profile linking.
+
+    The link target is always an explicitly identified customer portal
+    account — never ``request.user`` (the staff session account).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff = make_staff("link_staff")
+
+    def _make_portal_user(self, username, email):
+        UserModel = get_user_model()
+        return UserModel.objects.create_user(
+            username=username,
+            password="testpass123",
+            role=UserModel.Role.CUSTOMER,
+            email=email,
+        )
+
+    def test_search_requires_email(self):
+        response = auth_client(self.staff).get("/api/customers/link-search/")
+        self.assertEqual(response.status_code, 400)
+
+    def test_search_no_match(self):
+        response = auth_client(self.staff).get(
+            "/api/customers/link-search/?email=nobody@example.com"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 0)
+        self.assertEqual(response.data["matches"], [])
+
+    def test_search_one_match_unlinked(self):
+        target = make_customer(
+            name="Link Me", phone="555-9800", email="linkme@example.com"
+        )
+        response = auth_client(self.staff).get(
+            "/api/customers/link-search/?email=linkme@example.com"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        match = response.data["matches"][0]
+        self.assertEqual(match["id"], target.id)
+        # Identifying details (not name alone) are exposed for confirmation.
+        self.assertEqual(match["phone"], "555-9800")
+        self.assertIn("address", match)
+        self.assertFalse(match["is_linked"])
+
+    def test_search_multiple_matches_shows_details(self):
+        make_customer(name="Dup One", phone="555-9810", email="dup@example.com")
+        make_customer(name="Dup Two", phone="555-9811", email="dup@example.com")
+        response = auth_client(self.staff).get(
+            "/api/customers/link-search/?email=dup@example.com"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 2)
+        phones = {m["phone"] for m in response.data["matches"]}
+        self.assertEqual(phones, {"555-9810", "555-9811"})
+
+    def test_search_already_linked_shows_current_link(self):
+        owner = self._make_portal_user("link_owner", "owner2@example.com")
+        target = make_customer(
+            name="Owned", phone="555-9820", email="owned@example.com"
+        )
+        target.user = owner
+        target.save(update_fields=["user"])
+        response = auth_client(self.staff).get(
+            "/api/customers/link-search/?email=owned@example.com"
+        )
+        self.assertEqual(response.status_code, 200)
+        match = response.data["matches"][0]
+        self.assertTrue(match["is_linked"])
+        self.assertEqual(match["linked_username"], "link_owner")
+
+    def test_customer_role_cannot_search_or_link(self):
+        portal_user = self._make_portal_user("link_cust", "cust@example.com")
+        client = auth_client(portal_user)
+        self.assertEqual(
+            client.get("/api/customers/link-search/?email=x@example.com").status_code,
+            403,
+        )
+        self.assertEqual(
+            client.post(
+                "/api/customers/link/",
+                {"customer_id": 1, "target_username": "link_cust"},
+                format="json",
+            ).status_code,
+            403,
+        )
+
+    def test_link_unlinked_customer_to_portal_account(self):
+        portal_user = self._make_portal_user("link_target", "target@example.com")
+        target = make_customer(
+            name="Unlinked", phone="555-9830", email="unlinked@example.com"
+        )
+        response = auth_client(self.staff).post(
+            "/api/customers/link/",
+            {"customer_id": target.id, "target_username": "link_target"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        target.refresh_from_db()
+        self.assertEqual(target.user_id, portal_user.id)
+        # The staff session account itself was never linked.
+        self.assertIsNone(
+            Customer.objects.filter(user=self.staff).first()
+        )
+        # The portal account now resolves to the linked profile.
+        seen = auth_client(portal_user).get("/api/customers/me/")
+        self.assertEqual(seen.status_code, 200)
+        self.assertEqual(seen.data["id"], target.id)
+
+    def test_link_already_linked_same_account_is_idempotent(self):
+        portal_user = self._make_portal_user("link_same", "same@example.com")
+        target = make_customer(
+            name="Same Link", phone="555-9840", email="same@example.com"
+        )
+        target.user = portal_user
+        target.save(update_fields=["user"])
+        response = auth_client(self.staff).post(
+            "/api/customers/link/",
+            {"customer_id": target.id, "target_username": "link_same"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data.get("already_linked"))
+        target.refresh_from_db()
+        self.assertEqual(target.user_id, portal_user.id)
+
+    def test_link_overwrite_requires_confirmation(self):
+        first = self._make_portal_user("link_first", "first@example.com")
+        second = self._make_portal_user("link_second", "second@example.com")
+        target = make_customer(
+            name="Overwrite", phone="555-9850", email="overwrite@example.com"
+        )
+        target.user = first
+        target.save(update_fields=["user"])
+        # Without confirm: rejected, link untouched.
+        denied = auth_client(self.staff).post(
+            "/api/customers/link/",
+            {"customer_id": target.id, "target_username": "link_second"},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, 409)
+        target.refresh_from_db()
+        self.assertEqual(target.user_id, first.id)
+        # With explicit confirm: re-linked.
+        allowed = auth_client(self.staff).post(
+            "/api/customers/link/",
+            {
+                "customer_id": target.id,
+                "target_username": "link_second",
+                "confirm": True,
+            },
+            format="json",
+        )
+        self.assertEqual(allowed.status_code, 200)
+        self.assertTrue(allowed.data.get("was_relinked"))
+        target.refresh_from_db()
+        self.assertEqual(target.user_id, second.id)
+
+    def test_link_wrong_account_rejected_when_target_linked_elsewhere(self):
+        owner_a = self._make_portal_user("link_a", "a@example.com")
+        owner_b = self._make_portal_user("link_b", "b@example.com")
+        profile_a = make_customer(
+            name="Profile A", phone="555-9860", email="a-profile@example.com"
+        )
+        profile_a.user = owner_a
+        profile_a.save(update_fields=["user"])
+        profile_b = make_customer(
+            name="Profile B", phone="555-9861", email="b-profile@example.com"
+        )
+        # owner_a already belongs to profile A: cannot also take profile B.
+        response = auth_client(self.staff).post(
+            "/api/customers/link/",
+            {"customer_id": profile_b.id, "target_username": "link_a"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409)
+        profile_b.refresh_from_db()
+        self.assertIsNone(profile_b.user_id)
+        profile_a.refresh_from_db()
+        self.assertEqual(profile_a.user_id, owner_a.id)
+        self.assertIsNotNone(owner_b.pk)
+
+    def test_link_rejects_staff_and_admin_accounts(self):
+        from django.contrib.auth import get_user_model as _gum
+
+        UserModel = _gum()
+        admin = UserModel.objects.create_user(
+            username="link_admin",
+            password="testpass123",
+            role=UserModel.Role.ADMIN,
+            email="admin-link@example.com",
+        )
+        target = make_customer(
+            name="No Staff Link", phone="555-9870", email="nostaff@example.com"
+        )
+        # Staff session account itself is rejected as a target.
+        for payload in (
+            {"customer_id": target.id, "target_username": self.staff.username},
+            {"customer_id": target.id, "target_username": "link_admin"},
+        ):
+            response = auth_client(self.staff).post(
+                "/api/customers/link/", payload, format="json"
+            )
+            self.assertEqual(response.status_code, 400, msg=payload)
+        target.refresh_from_db()
+        self.assertIsNone(target.user_id)
+        self.assertIsNotNone(admin.pk)
