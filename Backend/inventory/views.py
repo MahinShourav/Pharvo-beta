@@ -3,11 +3,11 @@ from decimal import Decimal
 
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from accounts.permissions import IsStaffOrReadOnly
+from accounts.permissions import IsPharmacyStaff, IsStaffOrReadOnly
 from interaction.services import (
     interaction_match_terms,
     product_interaction_identifiers,
@@ -15,14 +15,17 @@ from interaction.services import (
 from purchases.models import Purchase
 from purchases.serializers import PurchaseSerializer
 
-from .models import Category, DrugInteraction, MedicineGroup, Product, Supplier
+from .models import Category, DrugInteraction, MedicineGroup, Product, Supplier, SupplierRestock
 from .serializers import (
     CategorySerializer,
     DrugInteractionSerializer,
     MedicineGroupSerializer,
     ProductSerializer,
     SupplierSerializer,
+    SupplierProfileSerializer,
+    SupplierRestockSerializer,
 )
+from .services import check_and_update_restock
 
 NEAR_EXPIRY_DAYS = 30
 
@@ -120,6 +123,22 @@ class SupplierViewSet(viewsets.ModelViewSet):
             }
         )
 
+    @action(detail=True, methods=["get"], url_path="profile")
+    def profile(self, request, pk=None):
+        supplier = get_object_or_404(Supplier, pk=pk)
+        return Response(SupplierProfileSerializer(supplier).data)
+
+    @action(detail=True, methods=["get"], url_path="restock-list")
+    def restock_list(self, request, pk=None):
+        supplier = get_object_or_404(Supplier, pk=pk)
+        status_filter = request.query_params.get("status")
+        qs = SupplierRestock.objects.select_related("product", "supplier").filter(
+            supplier=supplier
+        )
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return Response(SupplierRestockSerializer(qs, many=True).data)
+
 
 class MedicineGroupViewSet(viewsets.ModelViewSet):
     queryset = MedicineGroup.objects.annotate(product_count=Count("products"))
@@ -146,6 +165,70 @@ class DrugInteractionViewSet(viewsets.ModelViewSet):
                 Q(drug_a__icontains=search) | Q(drug_b__icontains=search)
             )
         return queryset
+
+
+class SupplierRestockViewSet(viewsets.ModelViewSet):
+    serializer_class = SupplierRestockSerializer
+    permission_classes = [IsPharmacyStaff]
+
+    def get_queryset(self):
+        qs = SupplierRestock.objects.select_related("product", "supplier").all()
+        supplier = self.request.query_params.get("supplier")
+        product = self.request.query_params.get("product")
+        restock_status = self.request.query_params.get("status")
+        if supplier:
+            qs = qs.filter(supplier_id=supplier)
+        if product:
+            qs = qs.filter(product_id=product)
+        if restock_status:
+            qs = qs.filter(status=restock_status)
+        return qs
+
+    @action(detail=True, methods=["post"], url_path="update-status")
+    def update_status(self, request, pk=None):
+        entry = get_object_or_404(SupplierRestock, pk=pk)
+        new_status = request.data.get("status")
+        if new_status not in dict(SupplierRestock.Status.choices):
+            return Response(
+                {"detail": f"Invalid status. Choose from: {dict(SupplierRestock.Status.choices)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        notes = request.data.get("notes")
+        entry.status = new_status
+        if notes is not None:
+            entry.notes = notes
+        entry.save(update_fields=["status", "notes", "updated_at"])
+        return Response(SupplierRestockSerializer(entry).data)
+
+    @action(detail=False, methods=["post"], url_path="check-all")
+    def check_all(self, request):
+        """Scan all active products with suppliers and create/update restock entries."""
+        products = Product.objects.select_related("supplier").filter(
+            is_active=True,
+            supplier__isnull=False,
+        )
+        created = 0
+        updated = 0
+        for product in products:
+            threshold = product.restock_threshold()
+            stock = product.stock_quantity
+            existing = SupplierRestock.objects.filter(
+                supplier=product.supplier,
+                product=product,
+            ).exists()
+            check_and_update_restock(product)
+            if stock <= threshold:
+                if existing:
+                    updated += 1
+                else:
+                    created += 1
+        return Response(
+            {
+                "detail": f"Restock check complete. Created: {created}, Updated: {updated}",
+                "created": created,
+                "updated": updated,
+            }
+        )
 
 
 class ProductViewSet(viewsets.ModelViewSet):
@@ -256,3 +339,21 @@ class ProductViewSet(viewsets.ModelViewSet):
                             break
         interactions = DrugInteraction.objects.filter(id__in=matching_ids)
         return Response(DrugInteractionSerializer(interactions, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="restock-check")
+    def restock_check(self, request, pk=None):
+        """Manually trigger a restock threshold check for a single product."""
+        product = get_object_or_404(
+            Product.objects.select_related("supplier"), pk=pk
+        )
+        if product.supplier is None:
+            return Response(
+                {"detail": "Product has no supplier mapped."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        check_and_update_restock(product)
+        entries = SupplierRestock.objects.filter(
+            supplier=product.supplier,
+            product=product,
+        )
+        return Response(SupplierRestockSerializer(entries, many=True).data)

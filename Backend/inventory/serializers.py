@@ -8,6 +8,7 @@ from .models import (
     MedicineGroup,
     Product,
     Supplier,
+    SupplierRestock,
 )
 
 
@@ -249,3 +250,79 @@ class DrugInteractionSerializer(serializers.ModelSerializer):
                 "This interaction pair already exists (in either order)."
             )
         return attrs
+
+
+class SupplierRestockSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_brand = serializers.CharField(source="product.brand", read_only=True)
+    product_barcode = serializers.CharField(source="product.barcode", read_only=True)
+    supplier_name = serializers.CharField(source="supplier.name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    stock_unit_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SupplierRestock
+        fields = [
+            "id",
+            "supplier",
+            "supplier_name",
+            "product",
+            "product_name",
+            "product_brand",
+            "product_barcode",
+            "current_stock",
+            "stock_unit",
+            "stock_unit_display",
+            "threshold",
+            "suggested_quantity",
+            "status",
+            "status_display",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_stock_unit_display(self, obj):
+        unit_labels = {"pc": "PC", "strip": "Strip", "box": "Box"}
+        return unit_labels.get(obj.stock_unit, obj.stock_unit)
+
+    def validate_notes(self, value):
+        return value.strip() if value else ""
+
+
+class SupplierProfileSerializer(serializers.ModelSerializer):
+    product_count = serializers.SerializerMethodField()
+    products = serializers.SerializerMethodField()
+    restock_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Supplier
+        fields = [
+            "id",
+            "name",
+            "company",
+            "contact_person",
+            "phone",
+            "email",
+            "address",
+            "is_active",
+            "created_at",
+            "product_count",
+            "products",
+            "restock_count",
+        ]
+        read_only_fields = ["created_at"]
+
+    def get_product_count(self, obj):
+        return obj.products.count()
+
+    def get_products(self, obj):
+        products = obj.products.select_related("category", "group").all()
+        return ProductSerializer(products, many=True).data
+
+    def get_restock_count(self, obj):
+        return obj.restock_items.filter(status=SupplierRestock.Status.PENDING).count()

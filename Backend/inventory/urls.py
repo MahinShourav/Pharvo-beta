@@ -6,6 +6,7 @@ from .views import (
     MedicineGroupViewSet,
     ProductViewSet,
     SupplierViewSet,
+    SupplierRestockViewSet,
 )
 
 router = DefaultRouter()
@@ -14,5 +15,6 @@ router.register("suppliers", SupplierViewSet, basename="supplier")
 router.register("groups", MedicineGroupViewSet, basename="medicine-group")
 router.register("interactions", DrugInteractionViewSet, basename="drug-interaction")
 router.register("products", ProductViewSet, basename="product")
+router.register("restock", SupplierRestockViewSet, basename="supplier-restock")
 
 urlpatterns = router.urls

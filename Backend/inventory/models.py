@@ -1,3 +1,5 @@
+import re
+
 from django.db import models
 
 
@@ -234,4 +236,117 @@ class Product(models.Model):
             unit in self.Unit.values
             and self.units_in(unit) is not None
             and self.get_unit_price(unit) is not None
+        )
+
+    # ------------------------------------------------------------------
+    # Form-type detection helpers (used by SupplierRestock threshold logic)
+    # ------------------------------------------------------------------
+    _CREAM_FORM_RE = re.compile(
+        r"(cream|ointment|gel|lotion|syrup|suspension|drops|solution)",
+        re.IGNORECASE,
+    )
+
+    def detect_form_type(self):
+        """Detect the product's dosage form from name, group, and category.
+
+        Returns one of: ``"cream"``, ``"syrup"``, or ``"tablet"``.
+        """
+        group_name = getattr(self.group, "name", "") or ""
+        category_name = getattr(self.category, "name", "") or ""
+        if "syrup" in group_name.strip().lower():
+            return "syrup"
+        hay = f"{self.name} {group_name} {category_name}"
+        if self._CREAM_FORM_RE.search(hay):
+            return "cream"
+        return "tablet"
+
+    def restock_unit(self):
+        """The natural restock unit for this product's form type.
+
+        Tablets/capsules -> strip (or pc if no strip pack).
+        Syrup           -> pc (bottles are counted individually).
+        Cream/pot       -> pc (tubes/pots are counted individually).
+        """
+        form = self.detect_form_type()
+        if form == "tablet" and self.pcs_per_strip:
+            return self.Unit.STRIP
+        return self.Unit.PC
+
+    def restock_threshold(self):
+        """Absolute PC count at which this product needs restocking.
+
+        Tablets/capsules: last 1 strip (or 1 pc if no strip configured).
+        Syrup:           last 1 bottle (=1 pc).
+        Cream/pot:       last 1 pot/tube (=1 pc).
+        """
+        form = self.detect_form_type()
+        if form == "tablet" and self.pcs_per_strip:
+            return self.pcs_per_strip  # 1 strip in PCs
+        return 1  # 1 bottle / 1 pot / 1 pc
+
+    def restock_suggested_qty(self):
+        """Suggested restock quantity in PCs: top up to coverMult x reorder_level.
+
+        Uses a default multiplier of 2 when no external settings are available.
+        """
+        return max(self.reorder_level * 2 - self.stock_quantity, 1)
+
+
+class SupplierRestock(models.Model):
+    """Tracks medicines that have hit their restock threshold for a supplier.
+
+    Entries persist until staff manually handles or dismisses them.  One entry
+    per product-supplier pair (unique_together).  No automatic notifications
+    are sent — this is a server-side tracking list only.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ORDERED = "ordered", "Ordered"
+        RECEIVED = "received", "Received"
+        DISMISSED = "dismissed", "Dismissed"
+
+    supplier = models.ForeignKey(
+        Supplier,
+        on_delete=models.CASCADE,
+        related_name="restock_items",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="restock_entries",
+    )
+    current_stock = models.IntegerField(
+        help_text="Stock level (in PCs) when this entry was created or last updated.",
+    )
+    stock_unit = models.CharField(
+        max_length=10,
+        help_text="The unit at which the threshold was evaluated (pc, strip, box).",
+    )
+    threshold = models.IntegerField(
+        help_text="The absolute PC threshold that triggered this entry.",
+    )
+    suggested_quantity = models.IntegerField(
+        default=0,
+        help_text="Suggested restock quantity in PCs.",
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "supplier restock"
+        verbose_name_plural = "supplier restocks"
+        unique_together = [("supplier", "product")]
+
+    def __str__(self):
+        return (
+            f"Restock: {self.product.name} -> {self.supplier.name} "
+            f"({self.get_status_display()})"
         )

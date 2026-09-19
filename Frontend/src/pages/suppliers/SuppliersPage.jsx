@@ -21,6 +21,7 @@ import {
   fetchSupplierProducts,
   fetchSupplierSummary,
   fetchSupplierPurchases,
+  fetchSupplierRestockList,
   fetchProducts,
   updateProductSupplier,
 } from "../../services/medicine";
@@ -79,6 +80,9 @@ export default function SuppliersPage({ role = ROLES.ADMIN } = {}) {
   const [detailPurchases, setDetailPurchases] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const [detailRestock, setDetailRestock] = useState([]);
+  const [detailRestockLoading, setDetailRestockLoading] = useState(false);
+  const [detailRestockError, setDetailRestockError] = useState("");
   const [assignId, setAssignId] = useState("");
   const [assigning, setAssigning] = useState(false);
 
@@ -135,18 +139,22 @@ export default function SuppliersPage({ role = ROLES.ADMIN } = {}) {
   const detailSupplier =
     suppliers.find((s) => Number(s.id) === Number(detailId)) || null;
 
-  const loadDetail = useCallback(async (id) => {
+const loadDetail = useCallback(async (id) => {
     setDetailLoading(true);
     setDetailError("");
+    setDetailRestockLoading(true);
+    setDetailRestockError("");
     try {
-      const [items, summary, purchases] = await Promise.all([
+      const [items, summary, purchases, restock] = await Promise.all([
         fetchSupplierProducts(id),
         fetchSupplierSummary(id),
         fetchSupplierPurchases(id),
+        fetchSupplierRestockList(id),
       ]);
       setDetailProducts(items || []);
       setDetailSummary(summary || null);
       setDetailPurchases(purchases || []);
+      setDetailRestock(restock || []);
     } catch (err) {
       setDetailError(
         err instanceof ApiError
@@ -156,8 +164,10 @@ export default function SuppliersPage({ role = ROLES.ADMIN } = {}) {
       setDetailProducts([]);
       setDetailSummary(null);
       setDetailPurchases([]);
+      setDetailRestock([]);
     } finally {
       setDetailLoading(false);
+      setDetailRestockLoading(false);
     }
   }, []);
 
@@ -636,10 +646,102 @@ export default function SuppliersPage({ role = ROLES.ADMIN } = {}) {
                 )}
               </div>
 
-              <div className="rounded-xl border border-slate-100 overflow-hidden">
-                <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-100 flex items-center gap-2">
-                  <History size={14} className="text-slate-400" />
-                  <span className="text-xs font-semibold text-slate-700">Supplier price history</span>
+                {/* Restock List / Low Stock Medicines section */}
+                {detailRestockLoading ? (
+                  <div className="py-8 text-center text-slate-400">
+                    <LoadingState label="Loading restock list..." />
+                  </div>
+                ) : detailRestockError ? (
+                  <div className="px-4 py-3 text-xs text-red-700 bg-red-50">{detailRestockError}</div>
+                ) : detailRestock.length > 0 ? (
+                  <div className="rounded-xl border border-slate-100 overflow-hidden">
+                    <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-100 flex items-center gap-2">
+                      <Package size={14} className="text-slate-400" />
+                      <span className="text-xs font-semibold text-slate-700">Restock List / Low Stock Medicines</span>
+                    </div>
+                    <div className="p-4">
+                      {detailRestock.map((restock) => {
+                        const product = detailProducts.find(
+                          (p) => String(p.id) === String(restock.product)
+                        );
+                        const getUnitLabel = () => {
+                          const groupName =
+                            (product?.group && product?.group.name) || "";
+                          const categoryName =
+                            (product?.category && product?.category.name) || "";
+                          const hay = `${product?.name} ${groupName} ${categoryName}`
+                            .toLowerCase();
+                          if (/syrup/.test(hay)) return "bottle";
+                          if (
+                            /cream|ointment|gel|lotion|syrup|suspension|drops|solution/.test(
+                              hay
+                            )
+                          )
+                            return restock.stock_unit || "pc";
+                          if (restock.stock_unit === "strip" ||
+                            product?.pcs_per_strip) return "strip";
+                          return "pc";
+                        };
+                        const unitLabel = getUnitLabel();
+                        return (
+                          <div
+                            key={restock.id}
+                            className="px-4 py-2.5 border-b border-slate-100 last:border-0"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-xs font-medium text-slate-700">
+                                  {restock.product_name ||
+                                    product?.name ||
+                                    "—"}
+                                </div>
+                                <div className="text-[11px] text-slate-400">
+                                  {product?.barcode || "—"}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-xs font-medium text-slate-700">
+                                  {restock.current_stock} {unitLabel}
+                                </div>
+                                <div className="text-[11px] text-slate-400">
+                                  Threshold: {restock.threshold} {unitLabel}
+                                </div>
+                                <div className="mt-1 text-[11px] font-medium text-slate-600">
+                                  {restock.suggested_quantity} pc suggested
+                                </div>
+                              </div>
+                              <div className="text-center text-[11px]">
+                                <StatusBadge status={restock.status} />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {detailRestock.length === 0 && (
+                        <div className="px-4 py-6 text-center text-xs text-slate-400">
+                          No medicines have reached their low-stock threshold yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-slate-400">
+                    <div className="text-slate-300 mb-3">
+                      <Package size={24} />
+                    </div>
+                    <p className="text-sm font-medium text-slate-500">
+                      No low-stock medicines
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      All medicines are above their restock threshold.
+                    </p>
+                  </div>
+                )}
+
+                <div className="rounded-xl border border-slate-100 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-100 flex items-center gap-2">
+                    <History size={14} className="text-slate-400" />
+                    <span className="text-xs font-semibold text-slate-700">Supplier price history</span>
                 </div>
                 {detailLoading ? (
                   <LoadingState label="Loading prices..." />

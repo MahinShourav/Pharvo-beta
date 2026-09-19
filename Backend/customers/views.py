@@ -9,8 +9,13 @@ from rest_framework.views import APIView
 from accounts.permissions import IsCustomer, IsPharmacyStaff
 from sales.models import Sale
 
-from .models import Customer
-from .serializers import CustomerSerializer, MyCustomerSerializer
+from .models import Customer, DiabetesRecord, BloodPressureRecord
+from .serializers import (
+    CustomerSerializer,
+    MyCustomerSerializer,
+    DiabetesRecordSerializer,
+    BloodPressureRecordSerializer,
+)
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
@@ -131,3 +136,187 @@ class MyCustomerView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(MyCustomerSerializer(customer).data)
+
+
+class DiabetesRecordListCreateView(APIView):
+    """List or create diabetes records for a customer.
+    GET /api/customers/me/diabetes-records/
+    POST /api/customers/me/diabetes-records/
+    Permission: IsPharmacyStaff for write, IsCustomer|IsAuthenticated for read.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Anyone authenticated can see the list, but only staff can add
+        customer = MyCustomerView._resolve_customer(request.user)
+        if customer is None:
+            return Response(
+                {"detail": "No customer profile linked."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        records = customer.diabetes_records.all()[:10]
+        serializer = DiabetesRecordSerializer(records, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        # Only pharmacy staff can create records
+        if not IsPharmacyStaff().has_permission(request, self):
+            return Response(
+                {"detail": "Pharmacy staff access required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        customer = MyCustomerView._resolve_customer(request.user)
+        if customer is None:
+            return Response(
+                {"detail": "No customer profile linked."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = DiabetesRecordSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(customer=customer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DiabetesRecordUpdateDeleteView(APIView):
+    """Update or delete a specific diabetes record.
+    PUT/PATCH /api/customers/me/diabetes-records/{id}/
+    DELETE /api/customers/me/diabetes-records/{id}/
+    Permission: IsPharmacyStaff for write.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_record(self, record_id):
+        try:
+            return DiabetesRecord.objects.get(id=record_id)
+        except DiabetesRecord.DoesNotExist:
+            raise ValidationError({"detail": "Diabetes record not found."})
+
+    def put(self, request, record_id):
+        if not IsPharmacyStaff().has_permission(request, self):
+            return Response(
+                {"detail": "Pharmacy staff access required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        record = self._get_record(record_id)
+        serializer = DiabetesRecordSerializer(record, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, record_id):
+        if not IsPharmacyStaff().has_permission(request, self):
+            return Response(
+                {"detail": "Pharmacy staff access required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        record = self._get_record(record_id)
+        serializer = DiabetesRecordSerializer(record, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, record_id):
+        if not IsPharmacyStaff().has_permission(request, self):
+            return Response(
+                {"detail": "Pharmacy staff access required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        record = self._get_record(record_id)
+        record.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class BloodPressureRecordListCreateView(APIView):
+    """List or create blood pressure records for a customer.
+    GET /api/customers/me/blood-pressure-records/
+    POST /api/customers/me/blood-pressure-records/
+    Permission: IsPharmacyStaff for write, IsCustomer|IsAuthenticated for read.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        customer = MyCustomerView._resolve_customer(request.user)
+        if customer is None:
+            return Response(
+                {"detail": "No customer profile linked."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        records = customer.blood_pressure_records.all()[:10]
+        serializer = BloodPressureRecordSerializer(records, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        if not IsPharmacyStaff().has_permission(request, self):
+            return Response(
+                {"detail": "Pharmacy staff access required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        customer = MyCustomerView._resolve_customer(request.user)
+        if customer is None:
+            return Response(
+                {"detail": "No customer profile linked."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = BloodPressureRecordSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(customer=customer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BloodPressureRecordUpdateDeleteView(APIView):
+    """Update or delete a specific blood pressure record.
+    PUT/PATCH /api/customers/me/blood-pressure-records/{id}/
+    DELETE /api/customers/me/blood-pressure-records/{id}/
+    Permission: IsPharmacyStaff for write.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_record(self, record_id):
+        try:
+            return BloodPressureRecord.objects.get(id=record_id)
+        except BloodPressureRecord.DoesNotExist:
+            raise ValidationError({"detail": "Blood pressure record not found."})
+
+    def put(self, request, record_id):
+        if not IsPharmacyStaff().has_permission(request, self):
+            return Response(
+                {"detail": "Pharmacy staff access required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        record = self._get_record(record_id)
+        serializer = BloodPressureRecordSerializer(record, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, record_id):
+        if not IsPharmacyStaff().has_permission(request, self):
+            return Response(
+                {"detail": "Pharmacy staff access required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        record = self._get_record(record_id)
+        serializer = BloodPressureRecordSerializer(record, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, record_id):
+        if not IsPharmacyStaff().has_permission(request, self):
+            return Response(
+                {"detail": "Pharmacy staff access required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        record = self._get_record(record_id)
+        record.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

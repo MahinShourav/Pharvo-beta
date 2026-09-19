@@ -181,3 +181,15 @@ export async function fetchSupplierSummary(supplierId) {
 export async function fetchSupplierPurchases(supplierId) {
   return request(`/inventory/suppliers/${supplierId}/purchases/`);
 }
+
+/**
+ * Fetch the low-stock / restock list for a supplier.
+ * Reuses `GET /api/inventory/suppliers/{id}/restock-list/`.
+ * Each entry tracks a product that has reached its configured
+ * low-stock threshold.
+ * @param {number} supplierId
+ * @returns {Promise<object[]>}
+ */
+export async function fetchSupplierRestockList(supplierId) {
+  return request(`/inventory/suppliers/${supplierId}/restock-list/`);
+}

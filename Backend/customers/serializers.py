@@ -2,11 +2,41 @@ from datetime import date
 
 from rest_framework import serializers
 
-from .models import Customer
+from .models import Customer, DiabetesRecord, BloodPressureRecord
 
 
 def _inactive_after_days():
     return 90
+
+
+class DiabetesRecordSerializer(serializers.ModelSerializer):
+    """Serializer for a single diabetes record."""
+
+    class Meta:
+        model = DiabetesRecord
+        fields = [
+            "id",
+            "diabetes_status",
+            "diabetes_type",
+            "recorded_date",
+            "notes",
+            "created_at",
+        ]
+
+
+class BloodPressureRecordSerializer(serializers.ModelSerializer):
+    """Serializer for a single blood pressure record."""
+
+    class Meta:
+        model = BloodPressureRecord
+        fields = [
+            "id",
+            "systolic",
+            "diastolic",
+            "recorded_date",
+            "notes",
+            "created_at",
+        ]
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -32,6 +62,8 @@ class CustomerSerializer(serializers.ModelSerializer):
             "loyalty_points",
             "user",
             "diabetes_status",
+            "diabetes_type",
+            "diabetes_recorded_date",
             "bp_systolic",
             "bp_diastolic",
             "bp_recorded_date",
@@ -49,6 +81,14 @@ class CustomerSerializer(serializers.ModelSerializer):
     def get_last_purchase(self, obj):
         last = getattr(obj, "last_purchase_date", None)
         return last.isoformat() if last else None
+
+    def get_diabetes_records(self, obj):
+        records = obj.diabetes_records.all()[:5]
+        return DiabetesRecordSerializer(records, many=True).data
+
+    def get_blood_pressure_records(self, obj):
+        records = obj.blood_pressure_records.all()[:5]
+        return BloodPressureRecordSerializer(records, many=True).data
 
     def get_status(self, obj):
         total = getattr(obj, "total_purchases", 0) or 0
@@ -109,6 +149,13 @@ class CustomerSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate_diabetes_recorded_date(self, value):
+        if value is not None and value > date.today():
+            raise serializers.ValidationError(
+                "Diabetes recorded date cannot be in the future."
+            )
+        return value
+
     def validate(self, attrs):
         # Blood pressure is stored as two integer fields. Accept both or
         # neither; reject physiologically impossible readings. Partial updates
@@ -162,9 +209,13 @@ class MyCustomerSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "diabetes_status",
+            "diabetes_type",
+            "diabetes_recorded_date",
             "bp_systolic",
             "bp_diastolic",
             "bp_recorded_date",
             "health_notes",
+            "diabetes_records",
+            "blood_pressure_records",
         ]
         read_only_fields = fields

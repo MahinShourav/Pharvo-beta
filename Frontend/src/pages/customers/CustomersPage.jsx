@@ -65,6 +65,12 @@ const BLANK_FORM = {
   date_of_birth: "",
   membership_tier: "",
   notes: "",
+  diabetes_status: "unknown",
+  diabetes_type: "",
+  diabetes_recorded_date: "",
+  systolic: "",
+  diastolic: "",
+  blood_pressure_recorded_date: "",
 };
 
 export default function CustomersPage({ role }) {
@@ -208,6 +214,9 @@ export default function CustomersPage({ role }) {
       date_of_birth: customer.date_of_birth || "",
       membership_tier: customer.membership_tier || "",
       notes: customer.notes || "",
+      diabetes_status: customer.diabetes_status || "unknown",
+      diabetes_type: customer.diabetes_type || "",
+      diabetes_recorded_date: customer.diabetes_recorded_date || "",
     });
     setEditingId(customer.id);
     setFormError("");
@@ -236,6 +245,9 @@ export default function CustomersPage({ role }) {
         date_of_birth: form.date_of_birth || null,
         membership_tier: form.membership_tier,
         notes: form.notes.trim(),
+        diabetes_status: form.diabetes_status,
+        diabetes_type: form.diabetes_type,
+        diabetes_recorded_date: form.diabetes_recorded_date || null,
       };
       if (modalMode === "edit" && editingId) {
         await updateCustomer(editingId, payload);

@@ -2,6 +2,72 @@ from django.conf import settings
 from django.db import models
 
 
+class DiabetesRecord(models.Model):
+    class DiabetesStatus(models.TextChoices):
+        UNKNOWN = "unknown", "Unknown"
+        YES = "yes", "Yes"
+        NO = "no", "No"
+
+    class DiabetesType(models.TextChoices):
+        TYPE_1 = "type1", "Type 1"
+        TYPE_2 = "type2", "Type 2"
+        OTHER = "other", "Other"
+        UNKNOWN = "unknown", "Unknown"
+
+    customer = models.ForeignKey(
+        "Customer",
+        on_delete=models.CASCADE,
+        related_name="diabetes_records",
+        verbose_name="customer",
+    )
+    diabetes_status = models.CharField(
+        max_length=10,
+        choices=DiabetesStatus.choices,
+        default=DiabetesStatus.UNKNOWN,
+        verbose_name="diabetes status",
+    )
+    diabetes_type = models.CharField(
+        max_length=10,
+        choices=DiabetesType.choices,
+        null=True,
+        blank=True,
+        verbose_name="diabetes type",
+    )
+    recorded_date = models.DateField(verbose_name="recorded date")
+    notes = models.TextField(blank=True, default="", verbose_name="notes")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-recorded_date"]
+        verbose_name = "diabetes record"
+        verbose_name_plural = "diabetes records"
+
+    def __str__(self):
+        return f"Diabetes record for {self.customer.name} on {self.recorded_date}"
+
+
+class BloodPressureRecord(models.Model):
+    customer = models.ForeignKey(
+        "Customer",
+        on_delete=models.CASCADE,
+        related_name="blood_pressure_records",
+        verbose_name="customer",
+    )
+    systolic = models.PositiveIntegerField(verbose_name="systolic")
+    diastolic = models.PositiveIntegerField(verbose_name="diastolic")
+    recorded_date = models.DateField(verbose_name="recorded date")
+    notes = models.TextField(blank=True, default="", verbose_name="notes")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-recorded_date"]
+        verbose_name = "blood pressure record"
+        verbose_name_plural = "blood pressure records"
+
+    def __str__(self):
+        return f"BP {self.systolic}/{self.diastolic} for {self.customer.name} on {self.recorded_date}"
+
+
 class Customer(models.Model):
     class MembershipTier(models.TextChoices):
         NON_MEMBER = "", "Non-member"
@@ -47,6 +113,23 @@ class Customer(models.Model):
         choices=DiabetesStatus.choices,
         default=DiabetesStatus.UNKNOWN,
         verbose_name="diabetes",
+    )
+    diabetes_type = models.CharField(
+        max_length=20,
+        choices=[
+            ("type1", "Type 1"),
+            ("type2", "Type 2"),
+            ("other", "Other"),
+            ("unknown", "Unknown"),
+        ],
+        null=True,
+        blank=True,
+        verbose_name="diabetes type",
+    )
+    diabetes_recorded_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="diabetes recorded date",
     )
     bp_systolic = models.PositiveIntegerField(
         null=True,

@@ -6,6 +6,12 @@ import { fetchMyCustomer } from "../../services/customer";
 import "../../styles/dashboard.css";
 
 const DIABETES_LABELS = { yes: "Yes", no: "No", unknown: "Unknown" };
+const DIABETES_TYPE_LABELS = {
+  type1: "Type 1",
+  type2: "Type 2",
+  other: "Other",
+  unknown: "Unknown",
+};
 
 function healthValue(present, text) {
   return present ? text : "Not recorded";
@@ -130,6 +136,14 @@ export default function CustomerPortal() {
                 </dd>
               </div>
               <div className="portal-health__row">
+                <dt>Diabetes Type</dt>
+                <dd>
+                  {profile.diabetes_type
+                    ? DIABETES_TYPE_LABELS[profile.diabetes_type] || profile.diabetes_type
+                    : "Not recorded"}
+                </dd>
+              </div>
+              <div className="portal-health__row">
                 <dt>Blood Pressure</dt>
                 <dd>
                   {healthValue(
@@ -146,6 +160,36 @@ export default function CustomerPortal() {
                 <dt>Notes</dt>
                 <dd>{healthValue(!!profile.health_notes, profile.health_notes)}</dd>
               </div>
+              {/* Diabetes History */}
+              {profile.diabetes_records && profile.diabetes_records.length > 0 ? (
+                <div className="portal-health__row">
+                  <dt>Diabetes History</dt>
+                  <dd>
+                    <ul>
+                      {profile.diabetes_records.map((record, idx) => (
+                        <li key={record.id}>
+                          <span>{new Date(record.recorded_date).toLocaleDateString()}: {DIABETES_LABELS[record.diabetes_status]}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              ) : null}
+              {/* Blood Pressure History */}
+              {profile.blood_pressure_records && profile.blood_pressure_records.length > 0 ? (
+                <div className="portal-health__row">
+                  <dt>Blood Pressure History</dt>
+                  <dd>
+                    <ul>
+                      {profile.blood_pressure_records.map((record, idx) => (
+                        <li key={record.id}>
+                          <span>{record.systolic}/{record.diastolic} on {new Date(record.recorded_date).toLocaleDateString()}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              ) : null}
             </dl>
           ) : (
             <p className="portal-card__empty">
