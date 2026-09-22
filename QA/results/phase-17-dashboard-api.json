@@ -1,0 +1,156 @@
+{
+    "total_products":  1,
+    "active_products":  1,
+    "total_customers":  0,
+    "total_suppliers":  8,
+    "total_sales":  7,
+    "total_revenue":  295.0,
+    "total_purchases":  0,
+    "total_purchase_amount":  0.0,
+    "low_stock_count":  0,
+    "expired_count":  0,
+    "near_expiry_count":  0,
+    "recent_sales":  [
+                         {
+                             "id":  7,
+                             "invoice_number":  "INV-20260922110451-D196",
+                             "customer":  null,
+                             "user":  2,
+                             "user_username":  "rafi",
+                             "total_amount":  "50.00",
+                             "discount":  "50.00",
+                             "payable_amount":  "0.00",
+                             "payment_method":  "cash",
+                             "sale_date":  "2026-09-22",
+                             "created_at":  "2026-09-22T05:04:51.392391Z",
+                             "items":  [
+                                           {
+                                               "id":  7,
+                                               "product":  5,
+                                               "product_name":  "QA POS Medicine",
+                                               "unit":  "pc",
+                                               "unit_display":  "PC",
+                                               "quantity":  1,
+                                               "unit_price":  "50.00",
+                                               "subtotal":  "50.00"
+                                           }
+                                       ]
+                         },
+                         {
+                             "id":  6,
+                             "invoice_number":  "INV-20260922110451-6B21",
+                             "customer":  null,
+                             "user":  2,
+                             "user_username":  "rafi",
+                             "total_amount":  "50.00",
+                             "discount":  "5.00",
+                             "payable_amount":  "45.00",
+                             "payment_method":  "cash",
+                             "sale_date":  "2026-09-22",
+                             "created_at":  "2026-09-22T05:04:51.314471Z",
+                             "items":  [
+                                           {
+                                               "id":  6,
+                                               "product":  5,
+                                               "product_name":  "QA POS Medicine",
+                                               "unit":  "pc",
+                                               "unit_display":  "PC",
+                                               "quantity":  1,
+                                               "unit_price":  "50.00",
+                                               "subtotal":  "50.00"
+                                           }
+                                       ]
+                         },
+                         {
+                             "id":  5,
+                             "invoice_number":  "INV-20260922110451-D232",
+                             "customer":  null,
+                             "user":  2,
+                             "user_username":  "rafi",
+                             "total_amount":  "50.00",
+                             "discount":  "0.00",
+                             "payable_amount":  "50.00",
+                             "payment_method":  "cash",
+                             "sale_date":  "2026-09-22",
+                             "created_at":  "2026-09-22T05:04:51.175372Z",
+                             "items":  [
+                                           {
+                                               "id":  5,
+                                               "product":  5,
+                                               "product_name":  "QA POS Medicine",
+                                               "unit":  "pc",
+                                               "unit_display":  "PC",
+                                               "quantity":  1,
+                                               "unit_price":  "50.00",
+                                               "subtotal":  "50.00"
+                                           }
+                                       ]
+                         },
+                         {
+                             "id":  4,
+                             "invoice_number":  "INV-20260922105332-2AA1",
+                             "customer":  null,
+                             "user":  2,
+                             "user_username":  "rafi",
+                             "total_amount":  "50.00",
+                             "discount":  "0.00",
+                             "payable_amount":  "50.00",
+                             "payment_method":  "cash",
+                             "sale_date":  "2026-09-22",
+                             "created_at":  "2026-09-22T04:53:32.185515Z",
+                             "items":  [
+                                           {
+                                               "id":  4,
+                                               "product":  5,
+                                               "product_name":  "QA POS Medicine",
+                                               "unit":  "pc",
+                                               "unit_display":  "PC",
+                                               "quantity":  1,
+                                               "unit_price":  "50.00",
+                                               "subtotal":  "50.00"
+                                           }
+                                       ]
+                         },
+                         {
+                             "id":  3,
+                             "invoice_number":  "INV-20260922105331-3138",
+                             "customer":  null,
+                             "user":  2,
+                             "user_username":  "rafi",
+                             "total_amount":  "50.00",
+                             "discount":  "0.00",
+                             "payable_amount":  "50.00",
+                             "payment_method":  "bkash",
+                             "sale_date":  "2026-09-22",
+                             "created_at":  "2026-09-22T04:53:32.000320Z",
+                             "items":  [
+                                           {
+                                               "id":  3,
+                                               "product":  5,
+                                               "product_name":  "QA POS Medicine",
+                                               "unit":  "pc",
+                                               "unit_display":  "PC",
+                                               "quantity":  1,
+                                               "unit_price":  "50.00",
+                                               "subtotal":  "50.00"
+                                           }
+                                       ]
+                         }
+                     ],
+    "top_selling_products":  [
+                                 {
+                                     "product":  5,
+                                     "product_name":  "QA POS Medicine",
+                                     "product_barcode":  "QA-POS-001",
+                                     "total_quantity":  7
+                                 }
+                             ],
+    "sales_summary":  {
+                          "days":  30,
+                          "start_date":  "2026-08-23",
+                          "end_date":  "2026-09-22",
+                          "sales_count":  7,
+                          "revenue":  295.0,
+                          "items_sold":  7
+                      }
+}
