@@ -1,0 +1,11 @@
+PHASE 12: PASS
+
+Sensitive/restricted medicine approval is enforced by the backend.
+
+Evidence:
+- Unapproved checkout returned HTTP 200 with requires_approval: True
+- Stock was NOT deducted (remained at 10)
+- Frontend can now display the approval dialog
+
+Detailed output:
+QA/results/phase-12-sensitive-medicine.txt
