@@ -1,0 +1,14 @@
+# Phase 13 - Drug Interaction Testing
+
+Status: PASS
+
+Covered:
+- DrugInteraction table in database
+- Interaction listing endpoint
+- Warfarin + Aspirin high-risk pair saved with computed pair_key
+- Search endpoint finds the pair
+- Unauthenticated access blocked
+- Database integrity after reads
+
+Detailed output:
+QA/results/phase-13-drug-interaction.txt
