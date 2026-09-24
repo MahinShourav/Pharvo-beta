@@ -1,5 +1,4 @@
-@"
-__pycache__/
+﻿__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -8,4 +7,3 @@ __pycache__/
 venv/
 node_modules/
 dist/
-"@ | Out-File -Encoding utf8 .gitignore
