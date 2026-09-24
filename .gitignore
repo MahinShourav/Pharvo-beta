@@ -1,9 +1,11 @@
-# Environment variables
+@"
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 .env
-.env.*
-!.env.example
-
-# Local environment overrides
-.env.local
-.env.production
-.env.staging
+.venv/
+venv/
+node_modules/
+dist/
+"@ | Out-File -Encoding utf8 .gitignore
