@@ -11,7 +11,7 @@ User = get_user_model()
 class ProductBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = InventoryProduct
-        fields = ['id', 'name', 'brand', 'barcode', 'unit_price', 'stock_quantity']
+        fields = ['id', 'name', 'brand', 'unit_price', 'stock_quantity']
 
 
 class CustomerSerializer(serializers.ModelSerializer):

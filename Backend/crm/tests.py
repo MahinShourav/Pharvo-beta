@@ -61,7 +61,6 @@ class CrmReminderApiTest(TestCase):
         cls.product = InventoryProduct.objects.create(
             name='CRM Test Product',
             brand='TestBrand',
-            barcode='CRM-TEST-001',
             unit_price=100.00,
             cost_price=80.00,
             stock_quantity=50,

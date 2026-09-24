@@ -16,11 +16,39 @@ Including another URLconf
 """
 
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import include, path
 
+
+def api_root(request):
+    """Root index for the PHARVO backend (avoids a bare 404 on `/`)."""
+    return JsonResponse(
+        {
+            "service": "PHARVO API",
+            "status": "running",
+            "endpoints": {
+                "auth": "/api/auth/",
+                "inventory": "/api/inventory/",
+                "sales": "/api/sales/",
+                "purchases": "/api/purchases/",
+                "customers": "/api/customers/",
+                "crm": "/api/crm/reminders/",
+                "dashboard": "/api/dashboard/",
+                "reports": "/api/reports/",
+                "notifications": "/api/notifications/",
+                "audit": "/api/audit/",
+                "ai": "/api/ai/query/",
+                "admin": "/admin/",
+            },
+        }
+    )
+
+
 urlpatterns = [
+    path("", api_root, name="api-root"),
     path("admin/", admin.site.urls),
     path("api/", include("accounts.urls")),
+    path("api/", include("ai.urls")),
     path("api/", include("customers.urls")),
     path("api/", include("inventory.urls")),
     path("api/", include("sales.urls")),
@@ -29,5 +57,4 @@ urlpatterns = [
     path("api/", include("dashboard.urls")),
     path("api/", include("notifications.urls")),
     path("api/", include("audit.urls")),
-    path("api/", include("supplier.urls")),
 ]

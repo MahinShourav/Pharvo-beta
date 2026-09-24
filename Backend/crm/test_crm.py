@@ -78,7 +78,7 @@ customer = Customer.objects.create(
     address='123 Test St', loyalty_points=0, created_at=timezone.now(), membership_tier='regular',
 )
 product = InventoryProduct.objects.create(
-    name='CRM Test Product', brand='TestBrand', barcode='CRM-TEST-999',
+    name='CRM Test Product', brand='TestBrand',
     unit_price=100.00, cost_price=80.00, stock_quantity=50, reorder_level=10,
     is_active=True, description='Test product', created_at=timezone.now(),
     updated_at=timezone.now(), is_sensitive=False,

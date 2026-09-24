@@ -116,7 +116,6 @@ def _temp_product(**kwargs):
     defaults = dict(
         name='__temp_notif_product_%s_%s' % (time.time(), abs(hash(str(kwargs))) % 100000),
         brand='test',
-        barcode='__notif_barcode_%s_%s' % (time.time(), abs(hash(str(kwargs))) % 10**9),
         unit_price=Decimal('10.00'),
         cost_price=Decimal('5.00'),
         stock_quantity=100,

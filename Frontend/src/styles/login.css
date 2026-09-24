@@ -4,21 +4,21 @@
    ============================================================ */
 
 :root {
-  --blue-700: #1d4ed8;
-  --blue-600: #2563eb;
-  --blue-100: #dbeafe;
-  --blue-50: #eff6ff;
-  --bg: #f5f9ff;
+  --blue-700: #0047d1;
+  --blue-600: #0057ff;
+  --blue-100: #ebf1ff;
+  --blue-50: #ebf1ff;
+  --bg: #f6f8fb;
   --surface: #ffffff;
-  --text: #111827;
-  --text-secondary: #6b7280;
-  --border: #e5e7eb;
-  --border-strong: #cbd5e1;
+  --text: #0a0f1c;
+  --text-secondary: #556072;
+  --border: #e6eaf0;
+  --border-strong: #d5dbe5;
   --error: #dc2626;
-  --error-bg: #fef2f2;
+  --error-bg: #fee2e2;
   --error-border: #fecaca;
   --error-text: #991b1b;
-  --focus-ring: rgba(37, 99, 235, 0.3);
+  --focus-ring: #e6fbf9;
   --radius-md: 10px;
   --radius-lg: 16px;
 }
@@ -76,7 +76,12 @@ a {
   display: flex;
   flex-direction: column;
   padding: clamp(28px, 4vh, 48px) clamp(32px, 5vw, 64px);
-  background: var(--surface);
+  background:
+    radial-gradient(560px 320px at 12% -60px, #e6fbf9 0%, transparent 60%),
+    radial-gradient(480px 300px at 88% 8%, #eef0fe 0%, transparent 55%),
+    radial-gradient(420px 420px at 50% 110%, #f3eefe 0%, transparent 60%),
+    linear-gradient(180deg, #ffffff 0%, #f9fafc 100%);
+  border-right: 1px solid var(--border);
   overflow: hidden;
 }
 
@@ -158,9 +163,9 @@ a {
 
 .brand-panel__statement {
   margin: 0 0 28px;
-  font-size: clamp(1.6rem, 2.4vw, 2rem);
-  line-height: 1.25;
-  font-weight: 700;
+  font-size: clamp(2rem, 3.4vw, 2.5rem);
+  line-height: 1.15;
+  font-weight: 800;
   letter-spacing: -0.01em;
   color: var(--text);
 }
@@ -353,9 +358,9 @@ a {
   gap: 10px;
   padding: 14px 16px;
   margin: 0 0 20px;
-  border: 1px solid #a7f3d0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: #f0fdf4;
+  background: var(--bg);
 }
 
 .demo-login__title {
@@ -365,9 +370,9 @@ a {
   gap: 8px;
   font-size: 0.75rem;
   font-weight: 700;
-  color: #166534;
+  color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .demo-login__copy {
@@ -375,10 +380,10 @@ a {
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  border: 1px solid #a7f3d0;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: #ffffff;
-  color: #047857;
+  background: var(--surface);
+  color: var(--text-secondary);
   font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
@@ -386,7 +391,7 @@ a {
 }
 
 .demo-login__copy:hover {
-  background: #ecfdf5;
+  background: var(--blue-50);
 }
 
 .demo-login__row {
@@ -401,19 +406,22 @@ a {
   width: 82px;
   flex-shrink: 0;
   font-weight: 600;
-  color: #065f46;
+  color: var(--text-secondary);
 }
 
 .demo-login__row-value {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 0.8125rem;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: #111827;
-  background: #ffffff;
-  border: 1px solid #d1fae5;
-  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
   padding: 4px 10px;
   user-select: all;
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
 }
 
 /* ------------------------------------------------------------
@@ -611,21 +619,25 @@ a {
   gap: 8px;
   border: none;
   border-radius: var(--radius-md);
-  background: var(--blue-600);
+  background: linear-gradient(135deg, #0ea5a4 0%, #6366f1 100%);
   color: #ffffff;
   font: inherit;
   font-size: 0.9375rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 1px 2px rgba(10, 15, 28, 0.05), 0 2px 6px rgba(10, 15, 28, 0.04);
+  transition: box-shadow 0.18s ease, transform 0.12s ease;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--blue-700);
+  background: linear-gradient(135deg, #0c8f8e 0%, #5457e5 100%);
+  box-shadow: 0 2px 4px rgba(10, 15, 28, 0.04), 0 8px 20px rgba(10, 15, 28, 0.06);
+  transform: translateY(-1px);
 }
 
 .btn:active:not(:disabled) {
-  background: #1e40af;
+  background: linear-gradient(135deg, #0c8f8e 0%, #5457e5 100%);
+  transform: scale(0.99);
 }
 
 .btn:focus-visible {

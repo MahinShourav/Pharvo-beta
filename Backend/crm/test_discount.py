@@ -98,7 +98,7 @@ print("\n--- Creating test fixtures ---")
 # Clean up any leftover test data from previous runs
 User.objects.filter(username='crm_disc_test_admin').delete()
 Customer.objects.filter(phone__in=['01888888888', '01888888889', '01888888890', '01888888891']).delete()
-InventoryProduct.objects.filter(barcode__startswith='CRM-TST-').delete()
+InventoryProduct.objects.filter(name__in=['CRM Test Med A', 'CRM Test Med B']).delete()
 InventorySupplier.objects.filter(phone='01999999999').delete()
 
 test_admin = User.objects.create_user(
@@ -112,7 +112,7 @@ test_supplier = InventorySupplier.objects.create(
 )
 
 test_product_a = InventoryProduct.objects.create(
-    id=9001, name='CRM Test Med A', brand='TestBrand', barcode='CRM-TST-A001',
+    id=9001, name='CRM Test Med A', brand='TestBrand',
     unit_price=Decimal('15.00'), cost_price=Decimal('10.00'),
     stock_quantity=500, reorder_level=10,
     is_active=True, description='Test', created_at=timezone.now(),
@@ -123,7 +123,7 @@ test_product_a = InventoryProduct.objects.create(
 cleanup_product_ids.append(test_product_a.pk)
 
 test_product_b = InventoryProduct.objects.create(
-    id=9002, name='CRM Test Med B', brand='TestBrand', barcode='CRM-TST-B001',
+    id=9002, name='CRM Test Med B', brand='TestBrand',
     unit_price=Decimal('8.00'), cost_price=Decimal('5.00'),
     stock_quantity=300, reorder_level=10,
     is_active=True, description='Test', created_at=timezone.now(),

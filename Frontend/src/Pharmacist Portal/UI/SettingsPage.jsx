@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { User, Shield, Mail, AtSign, LogOut, CheckCircle2 } from "lucide-react";
-import { fetchMe, clearStoredTokens, ROLES } from "../services/auth";
-import { ApiError } from "../services/api";
-import { Card, CardHeader, LoadingState } from "../components/ui/Blocks";
+import { fetchMe, clearStoredTokens, ROLES } from "../../services/auth";
+import { ApiError } from "../../services/api";
+import { Card, CardHeader, LoadingState } from "../../components/ui/Blocks";
 
 const ROLE_LABELS = {
   [ROLES.ADMIN]: "Administrator",

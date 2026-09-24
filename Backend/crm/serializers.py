@@ -14,7 +14,7 @@ class CustomerBriefSerializer(serializers.ModelSerializer):
 class ProductBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = InventoryProduct
-        fields = ['id', 'name', 'brand', 'barcode', 'unit_price']
+        fields = ['id', 'name', 'brand', 'unit_price']
 
 
 class ReminderSerializer(serializers.ModelSerializer):

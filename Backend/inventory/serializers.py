@@ -79,7 +79,6 @@ class ProductSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'brand',
-            'barcode',
             'unit_price',
             'cost_price',
             'stock_quantity',

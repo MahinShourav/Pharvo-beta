@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { getStoredUser, clearStoredTokens, ROLES } from "../services/auth";
-import { fetchUnreadCount } from "../services/notifications";
+import "../../theme/tokens.css";
+import "../../theme/pharvo-os.css";
+import { getStoredUser, clearStoredTokens, ROLES } from "../../services/auth";
+import { fetchUnreadCount } from "../../services/notifications";
 import AppShell from "./AppShell";
-import { AdminDashboard } from "../Dashboard/AdminDashboard";
-import PharmacistDashboard from "../Dashboard/PharmacistDashboard";
-import { SalesModule } from "../pos/Sales";
-import CustomersPage from "../customers/CustomersPage";
-import CRMModule from "../crm/CRMModule";
-import MedicinesInventoryPage from "../medicines/MedicinesInventoryPage";
-import OrdersPage from "../orders/OrdersPage";
-import ReportsPage from "../reports/ReportsPage";
-import NotificationsPage from "../notifications/NotificationsPage";
-import SettingsPage from "../settings/SettingsPage";
+import DashboardContainer from "../../Dashboard/DashboardContainer";
+import { SalesModule } from "../../pos/Sales";
+import CustomersPage from "../../customers/CustomersPage";
+import CRMModule from "../../crm/CRMModule";
+import MedicinesInventoryPage from "../../medicines/MedicinesInventoryPage";
+import AiAssistant from "../../components/AiAssistant";
+import OrdersPage from "../../orders/OrdersPage";
+import ReportsPage from "../../reports/ReportsPage";
+import NotificationsPage from "../../notifications/NotificationsPage";
+import SettingsPage from "./SettingsPage";
 
 const PAGE_META = {
   dashboard: { title: "Dashboard", subtitle: "Overview of your pharmacy operations today" },
@@ -22,6 +24,7 @@ const PAGE_META = {
   orders: { title: "Orders", subtitle: "All recorded sales and invoices" },
   reports: { title: "Reports", subtitle: "Sales, profit and performance reports" },
   notifications: { title: "Notifications", subtitle: "Alerts, expiry and stock notifications" },
+  "ai-assistant": { title: "AI Assistant", subtitle: "Ask about symptoms or medicines available in your pharmacy." },
   settings: { title: "Settings", subtitle: "Manage your personal settings" },
 };
 
@@ -67,15 +70,8 @@ export default function StaffApp() {
       onNavigate={handlePageChange}
       onLogout={handleLogout}
     >
-      {activeModule === "dashboard" && user?.role === ROLES.ADMIN && (
-        <AdminDashboard
-          user={user || {}}
-          onPageChange={handlePageChange}
-          onRefreshNotifications={loadUnread}
-        />
-      )}
-      {activeModule === "dashboard" && user?.role !== ROLES.ADMIN && (
-        <PharmacistDashboard
+      {activeModule === "dashboard" && (
+        <DashboardContainer
           user={user || {}}
           onPageChange={handlePageChange}
           onRefreshNotifications={loadUnread}
@@ -83,11 +79,12 @@ export default function StaffApp() {
       )}
       {activeModule === "pos" && <SalesModule />}
       {activeModule === "medicines-inventory" && <MedicinesInventoryPage />}
-      {activeModule === "customers" && <CustomersPage />}
+      {activeModule === "customers" && <CustomersPage onNavigateModule={handlePageChange} />}
       {activeModule === "crm" && <CRMModule onNavigate={handlePageChange} />}
       {activeModule === "orders" && <OrdersPage />}
       {activeModule === "reports" && <ReportsPage />}
       {activeModule === "notifications" && <NotificationsPage onChanged={loadUnread} />}
+      {activeModule === "ai-assistant" && <AiAssistant />}
       {activeModule === "settings" && <SettingsPage user={user || {}} onLogout={handleLogout} />}
     </AppShell>
   );

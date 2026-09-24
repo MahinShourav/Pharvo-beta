@@ -24,7 +24,6 @@ class ProductListView(generics.ListCreateAPIView):
             queryset = queryset.filter(
                 Q(name__icontains=search)
                 | Q(brand__icontains=search)
-                | Q(barcode__icontains=search)
             )
 
         category = self.request.query_params.get('category')

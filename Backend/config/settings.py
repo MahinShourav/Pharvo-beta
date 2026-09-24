@@ -83,11 +83,11 @@ INSTALLED_APPS = [
     'corsheaders',
 
     'accounts',
+    'ai',
     'inventory',
     'customers',
     'sales',
     'purchases',
-    'supplier',
     'crm',
     'notifications',
     'audit',
