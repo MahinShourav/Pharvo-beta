@@ -1,0 +1,30 @@
+PHARVO FULL QA SUITE
+Label: phase-32-regression
+Generated: 2026-09-26 14:09:13
+
+Executed backend test groups: 18
+Skipped test groups: 0
+Failures: 0
+
+RESULTS:
+PASS | Django System Check | manage.py check
+PASS | Customers | Backend\customers\test_customers.py
+PASS | CRM | Backend\crm\test_crm.py
+PASS | Drug Interactions | Backend\inventory\test_interactions.py
+PASS | Sensitive Medicine | Backend\inventory\test_sensitive_medicines.py
+PASS | Orders API | Backend\sales\test_orders_api.py
+PASS | Purchases | Backend\purchases\tests.py
+PASS | Suppliers | Backend\inventory\test_suppliers.py
+PASS | Reports | Backend\reports\test_reports.py
+PASS | Notifications | Backend\notifications\test_notifications.py
+PASS | Database Integrity | Backend\config\test_database_integrity.py
+PASS | API Smoke | Backend\config\test_api_smoke.py
+PASS | Negative Cases | Backend\config\test_negative_cases.py
+PASS | Boundary Values | Backend\config\test_boundaries.py
+PASS | Error Handling | Backend\config\test_error_handling.py
+PASS | Performance Smoke | Backend\config\test_performance_smoke.py
+PASS | Security | Backend\config\test_security.py
+PASS | Integration Flow | Backend\config\test_integration_flow.py
+PASS | End To End Flow | Backend\config\test_e2e_flow.py
+PASS | Frontend Build | npm run build
+PASS | Selenium Suite | Frontend/tests

@@ -1,0 +1,2 @@
+Bug ID,Title,Module,Severity,Priority,Status,Found In Phase,Expected Result,Actual Result,Evidence,Fix Commit,Retest Status
+QA-001,Audit logging module not implemented,Backend / Audit,MEDIUM,P3,Open,20,Audit log model + list/detail API present,No audit app exists in codebase,QA/results/phase-20-audit.txt,N/A,Not Fixed

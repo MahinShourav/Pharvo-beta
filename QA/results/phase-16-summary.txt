@@ -1,0 +1,24 @@
+# Phase 16 - Supplier Order Testing
+
+Status: PASS (adapted)
+
+Note on scope:
+The original Phase 16 guide assumed a dedicated supplier app with a
+SupplierOrder model and state machine. That app does not exist in this
+project version. In this codebase:
+
+- Supplier orders are represented by the Purchase model
+  (tested in Phase 15 - PASS).
+- Supplier CRUD is exposed via the inventory app at
+  /api/inventory/suppliers/.
+
+Covered in this adapted phase:
+- List suppliers endpoint
+- Create supplier (valid data)
+- Retrieve supplier by ID
+- Reject supplier without required fields
+- Update supplier (PATCH)
+- Unauthenticated access blocked
+
+Detailed output:
+QA/results/phase-16-supplier-orders.txt
