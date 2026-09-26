@@ -86,7 +86,9 @@ $BackendTests = @(
     @("Boundary Values",   "Backend\config\test_boundaries.py"),
     @("Error Handling",    "Backend\config\test_error_handling.py"),
     @("Performance Smoke", "Backend\config\test_performance_smoke.py"),
-    @("Security",          "Backend\config\test_security.py")
+    @("Security",          "Backend\config\test_security.py"),
+    @("Integration Flow",  "Backend\config\test_integration_flow.py"),
+    @("End To End Flow",   "Backend\config\test_e2e_flow.py")
 )
 
 foreach ($Test in $BackendTests) {
